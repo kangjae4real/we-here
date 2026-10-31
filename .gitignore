@@ -39,3 +39,4 @@ yarn-error.log*
 
 # oh-my-claudecode
 .omc
+.gstack/
