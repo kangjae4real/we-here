@@ -43,3 +43,6 @@ next-env.d.ts
 # storybook
 /storybook-static
 *storybook.log
+
+# oh-my-claudecode
+.omc/
