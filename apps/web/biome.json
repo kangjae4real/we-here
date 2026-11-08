@@ -29,6 +29,17 @@
       "react": "recommended"
     }
   },
+  "overrides": [
+    {
+      "includes": [
+        "src/components/ui/**",
+        "src/hooks/**",
+        "src/lib/highlighter.tsx",
+        "!src/components/ui/**/*.stories.tsx"
+      ],
+      "linter": { "enabled": false }
+    }
+  ],
   "assist": {
     "actions": {
       "source": {
