@@ -1,6 +1,7 @@
 import { withThemeByClassName } from "@storybook/addon-themes";
 import type { Preview, ReactRenderer } from "@storybook/nextjs-vite";
 import { geistMono, geistSans } from "../src/app/fonts";
+import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "../src/app/globals.css";
 
 // Mirror the <html> classes from app/layout.tsx
