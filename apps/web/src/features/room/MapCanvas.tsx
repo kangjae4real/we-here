@@ -368,7 +368,9 @@ function FitBounds({ points, highlight, heat }: MapProps) {
     const margin = freeArea(w);
     // The map already ends above the mobile sheet, so drop that part of the margin.
     if (w < 768) margin.bottom = 28;
-    map.fitBounds(coords, { ...margin, maxZoom: 17 });
+    // fitBounds swaps array items for LatLng objects in place, so pass a copy
+    // or it corrupts the shared points and heat cells.
+    map.fitBounds([...coords], { ...margin, maxZoom: 17 });
   }, [map, points, highlight, heat]);
   return null;
 }
@@ -401,7 +403,8 @@ function HeatLayer({ cells }: { cells: HeatCell[] }) {
   useEffect(() => {
     const layer = new navermaps.visualization.HeatMap({
       map,
-      radius: 30,
+      radius: 50,
+      opacity: 0.8,
       data: cells.map(
         (c) =>
           new navermaps.visualization.WeightedLocation(c.lat, c.lng, c.days),
