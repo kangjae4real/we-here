@@ -1,9 +1,17 @@
 "use client";
 
 import { cn } from "cn";
-import Script from "next/script";
 import type * as React from "react";
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef, useState } from "react";
+import {
+  Circle,
+  Container,
+  Marker,
+  NaverMap,
+  NavermapsProvider,
+  useMap,
+  useNavermaps,
+} from "react-naver-maps";
 import {
   type HeatCell,
   type LatLng,
@@ -12,7 +20,9 @@ import {
   type Who,
 } from "./mock";
 
-const NCP_KEY_ID = process.env.NEXT_PUBLIC_NCP_KEY_ID;
+// The Maps JS API needs only the client ID. The client secret is for server-side
+// REST calls and must not reach the browser bundle.
+const CLIENT_ID = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
 
 type MapProps = {
   points: PhotoPoint[];
@@ -21,7 +31,16 @@ type MapProps = {
 };
 
 export function MapCanvas(props: MapProps) {
-  return NCP_KEY_ID ? <NaverMap {...props} /> : <PlaceholderMap {...props} />;
+  if (!CLIENT_ID) return <PlaceholderMap {...props} />;
+  return (
+    <MapErrorBoundary
+      fallback={
+        <PlaceholderMap {...props} note="네이버 지도를 불러오지 못했어요" />
+      }
+    >
+      <NaverMapCanvas clientId={CLIENT_ID} {...props} />
+    </MapErrorBoundary>
+  );
 }
 
 export function ParticipantMark({
@@ -48,8 +67,19 @@ export function ParticipantMark({
   );
 }
 
+/** Screen edges the floating UI covers, so the map fits points into the rest. */
+function freeArea(w: number) {
+  return {
+    top: 96,
+    right: w >= 768 ? 24 : 44,
+    bottom: w < 768 ? 140 : 32,
+    left: w >= 1024 ? 432 : w >= 768 ? 352 : 44,
+  };
+}
+
 // ---------------------------------------------------------------------------
-// Placeholder map: used when NEXT_PUBLIC_NCP_KEY_ID is not set.
+// Placeholder map: used when NEXT_PUBLIC_NAVER_MAP_CLIENT_ID is not set or the
+// Naver script fails to load.
 
 const LNG_SCALE = Math.cos((37.55 * Math.PI) / 180);
 const HAN_RIVER: [number, number][] = [
@@ -74,10 +104,7 @@ function fit(bounds: LatLng[], w: number, h: number) {
   const minY = Math.min(...ys);
   const spanX = Math.max(...xs) - minX;
   const spanY = Math.max(...ys) - minY;
-  const left = w >= 1024 ? 432 : w >= 768 ? 352 : 44;
-  const right = w >= 768 ? 24 : 44;
-  const top = 96;
-  const bottom = w < 768 ? 140 : 32;
+  const { top, right, bottom, left } = freeArea(w);
   const freeW = w - left - right;
   const freeH = h - top - bottom;
   const s = Math.min(freeW / spanX, freeH / spanY);
@@ -89,7 +116,12 @@ function fit(bounds: LatLng[], w: number, h: number) {
   });
 }
 
-function PlaceholderMap({ points, highlight, heat }: MapProps) {
+function PlaceholderMap({
+  points,
+  highlight,
+  heat,
+  note = "네이버 지도 키 없음",
+}: MapProps & { note?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -228,133 +260,154 @@ function PlaceholderMap({ points, highlight, heat }: MapProps) {
       )}
 
       <span className="absolute right-4 bottom-36 rounded-full bg-background/90 px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm md:bottom-4">
-        지도 미리보기 · 네이버 지도 키 없음
+        지도 미리보기 · {note}
       </span>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Naver Maps JS v3: used when NEXT_PUBLIC_NCP_KEY_ID is set.
+// Naver Maps JS v3 through react-naver-maps.
 
-type NaverLatLng = object;
-type NaverOverlay = { setMap(map: NaverMapInstance | null): void };
-type NaverMapInstance = {
-  fitBounds(bounds: object, margin?: object): void;
-};
-type NaverMapsApi = {
-  Map: new (el: HTMLElement, options: object) => NaverMapInstance;
-  LatLng: new (lat: number, lng: number) => NaverLatLng;
-  LatLngBounds: new (
-    sw: NaverLatLng,
-    ne: NaverLatLng,
-  ) => {
-    extend(p: NaverLatLng): void;
-  };
-  Marker: new (options: object) => NaverOverlay;
-  Circle: new (options: object) => NaverOverlay;
-  Point: new (x: number, y: number) => object;
-  visualization: {
-    HeatMap: new (options: object) => NaverOverlay;
-    WeightedLocation: new (lat: number, lng: number, w: number) => object;
-  };
-};
+class MapErrorBoundary extends Component<
+  { fallback: React.ReactNode; children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
 
-declare global {
-  interface Window {
-    naver?: { maps: NaverMapsApi };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
   }
 }
 
-const MARKER_HTML: Record<Who, string> = {
-  a: '<span style="display:block;width:12px;height:12px;border:2px solid white;border-radius:9999px;background:var(--participant-a);box-shadow:0 1px 2px rgb(0 0 0 / .3)"></span>',
-  b: '<span style="display:block;width:10px;height:10px;border:2px solid white;transform:rotate(45deg);background:var(--participant-b);box-shadow:0 1px 2px rgb(0 0 0 / .3)"></span>',
+function markerIcon(who: Who, size: number, opacity = 1): naver.maps.HtmlIcon {
+  const shape =
+    who === "a" ? "border-radius:9999px" : "transform:rotate(45deg)";
+  return {
+    content: `<span style="display:block;width:${size}px;height:${size}px;border:2px solid white;${shape};background:var(--participant-${who});opacity:${opacity};box-shadow:0 1px 2px rgb(0 0 0 / .3)"></span>`,
+    anchor: { x: size / 2, y: size / 2 },
+  };
+}
+
+// Module constants so markers keep the same icon object across renders.
+const ICONS = {
+  normal: { a: markerIcon("a", 12), b: markerIcon("b", 10) },
+  dim: { a: markerIcon("a", 12, 0.3), b: markerIcon("b", 10, 0.3) },
+  focus: { a: markerIcon("a", 16), b: markerIcon("b", 14) },
 };
 
-function NaverMap({ points, highlight, heat }: MapProps) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [map, setMap] = useState<NaverMapInstance | null>(null);
+function NaverMapCanvas({
+  clientId,
+  points,
+  highlight,
+  heat,
+}: MapProps & { clientId: string }) {
+  return (
+    <NavermapsProvider ncpKeyId={clientId} submodules={["visualization"]}>
+      {/* On mobile the map stops above the 112px sheet so Naver's logo and copyright stay visible. */}
+      <Container
+        role="application"
+        aria-label="두 사람의 사진 위치 지도"
+        className="inset-0 bg-muted max-md:bottom-28"
+        // Container sets an inline position: relative, which would beat a class.
+        style={{ position: "absolute" }}
+      >
+        {(navermaps) => (
+          <NaverMap
+            defaultCenter={{ lat: 37.54, lng: 126.99 }}
+            defaultZoom={12}
+            logoControlOptions={{ position: navermaps.Position.BOTTOM_RIGHT }}
+            mapDataControlOptions={{
+              position: navermaps.Position.BOTTOM_RIGHT,
+            }}
+          >
+            <FitBounds points={points} highlight={highlight} heat={heat} />
+            {heat ? (
+              <HeatLayer cells={heat} />
+            ) : (
+              points.map((p) => (
+                <Marker
+                  key={p.id}
+                  defaultPosition={p}
+                  icon={highlight ? ICONS.dim[p.who] : ICONS.normal[p.who]}
+                />
+              ))
+            )}
+            {highlight && <EncounterCircle a={highlight.a} b={highlight.b} />}
+            {highlight && (
+              <>
+                <Marker
+                  position={highlight.a}
+                  icon={ICONS.focus.a}
+                  zIndex={10}
+                />
+                <Marker
+                  position={highlight.b}
+                  icon={ICONS.focus.b}
+                  zIndex={10}
+                />
+              </>
+            )}
+          </NaverMap>
+        )}
+      </Container>
+    </NavermapsProvider>
+  );
+}
 
-  function init() {
-    const n = window.naver?.maps;
-    if (!n || !ref.current || map) return;
-    setMap(
-      new n.Map(ref.current, {
-        center: new n.LatLng(37.54, 126.99),
-        zoom: 12,
-        logoControlOptions: { position: 9 },
-      }),
-    );
-  }
-
+/** Zooms to the selected pair (D6), the heat cells, or every photo. */
+function FitBounds({ points, highlight, heat }: MapProps) {
+  const map = useMap();
   useEffect(() => {
-    const n = window.naver?.maps;
-    if (!n || !map || heat) return;
-    const markers = points.map(
-      (p) =>
-        new n.Marker({
-          map,
-          position: new n.LatLng(p.lat, p.lng),
-          icon: { content: MARKER_HTML[p.who], anchor: new n.Point(6, 6) },
-        }),
-    );
-    return () => {
-      for (const m of markers) m.setMap(null);
-    };
-  }, [map, points, heat]);
+    const coords = highlight ? [highlight.a, highlight.b] : (heat ?? points);
+    const w = window.innerWidth;
+    const margin = freeArea(w);
+    // The map already ends above the mobile sheet, so drop that part of the margin.
+    if (w < 768) margin.bottom = 28;
+    map.fitBounds(coords, { ...margin, maxZoom: 17 });
+  }, [map, points, highlight, heat]);
+  return null;
+}
 
-  useEffect(() => {
-    const n = window.naver?.maps;
-    if (!n || !map || !highlight) return;
-    const a = new n.LatLng(highlight.a.lat, highlight.a.lng);
-    const b = new n.LatLng(highlight.b.lat, highlight.b.lng);
-    const bounds = new n.LatLngBounds(a, a);
-    bounds.extend(b);
-    map.fitBounds(bounds, { top: 160, right: 80, bottom: 200, left: 80 });
-    const radius =
-      Math.hypot(
-        (highlight.a.lat - highlight.b.lat) * 111_000,
-        (highlight.a.lng - highlight.b.lng) * 111_000 * LNG_SCALE,
-      ) / 2;
-    const circle = new n.Circle({
-      map,
-      center: new n.LatLng(
-        (highlight.a.lat + highlight.b.lat) / 2,
-        (highlight.a.lng + highlight.b.lng) / 2,
-      ),
-      radius,
-      strokeStyle: "dash",
-      strokeWeight: 2,
-      fillOpacity: 0.05,
-    });
-    return () => circle.setMap(null);
-  }, [map, highlight]);
+function EncounterCircle({ a, b }: { a: LatLng; b: LatLng }) {
+  const color = getComputedStyle(document.documentElement)
+    .getPropertyValue("--foreground")
+    .trim();
+  const radius =
+    Math.hypot(
+      (a.lat - b.lat) * 111_000,
+      (a.lng - b.lng) * 111_000 * LNG_SCALE,
+    ) / 2;
+  return (
+    <Circle
+      center={{ lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 }}
+      radius={radius}
+      strokeColor={color}
+      strokeStyle="dash"
+      strokeWeight={2}
+      fillColor={color}
+      fillOpacity={0.05}
+    />
+  );
+}
 
+function HeatLayer({ cells }: { cells: HeatCell[] }) {
+  const navermaps = useNavermaps();
+  const map = useMap();
   useEffect(() => {
-    const n = window.naver?.maps;
-    if (!n || !map || !heat) return;
-    const layer = new n.visualization.HeatMap({
+    const layer = new navermaps.visualization.HeatMap({
       map,
       radius: 30,
-      data: heat.map(
-        (c) => new n.visualization.WeightedLocation(c.lat, c.lng, c.days),
+      data: cells.map(
+        (c) =>
+          new navermaps.visualization.WeightedLocation(c.lat, c.lng, c.days),
       ),
     });
     return () => layer.setMap(null);
-  }, [map, heat]);
-
-  return (
-    <>
-      <Script
-        src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${NCP_KEY_ID}&submodules=visualization`}
-        onReady={init}
-      />
-      <div
-        ref={ref}
-        role="application"
-        aria-label="두 사람의 사진 위치 지도"
-        className="absolute inset-0 bg-muted"
-      />
-    </>
-  );
+  }, [navermaps, map, cells]);
+  return null;
 }
