@@ -2,7 +2,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 
 // Shared by app/layout.tsx and .storybook/preview.ts so stories render with the same fonts
 export const geistSans = Geist({
-  variable: "--font-sans",
+  variable: "--font-geist-sans",
   subsets: ["latin"],
 });
 
