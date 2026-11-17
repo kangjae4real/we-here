@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { InvalidInput } from '../core/input.js';
 import { ApiError, toApiError } from './problem.js';
 
@@ -21,12 +21,13 @@ describe('toApiError', () => {
     expect(e.options.status).toBe(404);
   });
 
-  it('turns a JSON parse failure into validation_failed', () => {
-    const parseError = Object.assign(new SyntaxError('bad'), {
-      type: 'entity.parse.failed',
-      status: 400,
-    });
-    expect(toApiError(parseError).code).toBe('validation_failed');
+  it('turns malformed bodies into 400 validation_failed', () => {
+    const tooLarge = Object.assign(new Error('too large'), { status: 413 });
+    for (const e of [new BadRequestException('bad json'), tooLarge]) {
+      const problem = toApiError(e);
+      expect(problem.code).toBe('validation_failed');
+      expect(problem.options.status).toBeUndefined();
+    }
   });
 
   it('hides anything unexpected behind internal_error', () => {

@@ -65,25 +65,31 @@ export function toApiError(e: unknown): ApiError {
   if (e instanceof InvalidInput) {
     return new ApiError('validation_failed', { errors: e.issues });
   }
-  if (e instanceof HttpException && e.getStatus() === 404) {
+  const status = clientErrorStatus(e);
+  if (status === 404) {
     return new ApiError('validation_failed', {
       status: 404,
       detail: 'No such route',
     });
   }
-  if (isBodyParserError(e)) {
+  if (status !== undefined) {
     return new ApiError('validation_failed', {
-      detail: 'Request body is not valid JSON',
+      detail: 'Malformed request',
       errors: [{ field: 'body', code: 'invalid_format' }],
     });
   }
   return new ApiError('internal_error');
 }
 
-function isBodyParserError(e: unknown): boolean {
-  if (typeof e !== 'object' || e === null) return false;
-  const type = (e as { type?: unknown }).type;
-  return typeof type === 'string' && type.startsWith('entity.');
+/** 4xx raised below our handlers: Nest routing, Nest's mapping of body-parser and URI errors, raw body-parser errors. */
+function clientErrorStatus(e: unknown): number | undefined {
+  const status =
+    e instanceof HttpException
+      ? e.getStatus()
+      : (e as { status?: unknown } | null)?.status;
+  return typeof status === 'number' && status >= 400 && status < 500
+    ? status
+    : undefined;
 }
 
 export function sendProblem(res: Response, error: ApiError): void {

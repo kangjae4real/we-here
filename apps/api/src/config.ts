@@ -1,6 +1,11 @@
 export interface Config {
   port: number;
   databaseUrl: string;
+  /** Per IP per hour, for createRoom and, as its own bucket, joinRoom. */
+  roomCreateLimitPerHour: number;
+  invitePreviewLimitPerHour: number;
+  photoLimitPerParticipant: number;
+  chatRoomHourlyLimit: number;
 }
 
 export const CONFIG = Symbol('Config');
@@ -32,6 +37,10 @@ export function readConfig(
   const config: Config = {
     port: int('PORT', 4000, 0),
     databaseUrl: required('DATABASE_URL'),
+    roomCreateLimitPerHour: int('ROOM_CREATE_LIMIT_PER_HOUR', 10, 1),
+    invitePreviewLimitPerHour: int('INVITE_PREVIEW_LIMIT_PER_HOUR', 60, 1),
+    photoLimitPerParticipant: int('PHOTO_LIMIT_PER_PARTICIPANT', 2000, 1),
+    chatRoomHourlyLimit: int('CHAT_ROOM_HOURLY_LIMIT', 30, 1),
   };
   return problems.length ? { ok: false, problems } : { ok: true, config };
 }
