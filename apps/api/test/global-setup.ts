@@ -28,9 +28,9 @@ export default async function setup() {
     );
     if (missing.length) console.log(`Not exercised: ${missing.join(', ')}`);
     if (REQUIRE_FULL_COVERAGE && missing.length) {
-      throw new Error(
-        `Contract coverage gate: ${missing.length} pairs missing`,
-      );
+      console.error(`Contract coverage gate: ${missing.length} pairs missing`);
+      // Vitest logs an error thrown from teardown but still exits 0.
+      process.exitCode = 1;
     }
   };
 }

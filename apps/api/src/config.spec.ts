@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { readConfig } from './config.js';
 
 const VALID = {
@@ -91,5 +92,26 @@ describe('readConfig', () => {
         'LLM_FAKE_SCENARIO must be one of ok, length, mid_error, empty, rate_limited, error',
       ],
     });
+  });
+
+  it('reads only variables that .env.example documents, and all of them', () => {
+    const read = new Set<string>();
+    for (const branch of [
+      { GEOCODER: 'naver', LLM_PROVIDER: 'openai-compatible' },
+      { GEOCODER: 'fake', LLM_PROVIDER: 'fake' },
+    ]) {
+      const env = new Proxy({ ...VALID, ...branch } as Record<string, string>, {
+        get(target, name: string) {
+          read.add(name);
+          return target[name];
+        },
+      });
+      readConfig(env);
+    }
+    const example = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+    const documented = new Set(
+      example.split('\n').flatMap((l) => /^([A-Z][A-Z0-9_]*)=/.exec(l)?.slice(1) ?? []),
+    );
+    expect([...read].sort()).toEqual([...documented].sort());
   });
 });

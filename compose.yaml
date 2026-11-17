@@ -22,6 +22,14 @@ services:
       target: api
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/wehere
+      THUMB_SIGNING_SECRET: ${THUMB_SIGNING_SECRET:-dev-only-thumb-secret-change-me-0123456789}
+      GEOCODER: ${GEOCODER:-fake}
+      NCP_CLIENT_ID: ${NCP_CLIENT_ID:-}
+      NCP_CLIENT_SECRET: ${NCP_CLIENT_SECRET:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
     ports:
       - "4000:4000"
     depends_on:
