@@ -10,6 +10,7 @@ export type FieldIssueCode =
   | 'out_of_range'
   | 'unknown_field'
   | 'control_chars'
+  | 'conflict'
   | 'self';
 
 export interface FieldIssue {

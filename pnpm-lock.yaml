@@ -35,6 +35,9 @@ importers:
       ajv-formats:
         specifier: ^3.0.1
         version: 3.0.1(ajv@8.20.0)
+      multer:
+        specifier: 2.4.0
+        version: 2.4.0
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -60,6 +63,9 @@ importers:
       '@types/express':
         specifier: ^5.0.0
         version: 5.0.6
+      '@types/multer':
+        specifier: ^2.3.0
+        version: 2.3.0
       '@types/node':
         specifier: ^24.0.0
         version: 24.19.2
@@ -2267,6 +2273,9 @@ packages:
 
   '@types/methods@1.1.4':
     resolution: {integrity: sha512-ymXWVrDiCxTBE3+RIrrP533E70eA+9qu7zdWoHuOmGujkYtzf4HQF96b8nwHLqhuf4ykX61IGRIB38CC6/sImQ==}
+
+  '@types/multer@2.3.0':
+    resolution: {integrity: sha512-i7STIm9V4K2MPH4ZYMtrZAwNxs3kglk2LgleaTuB9pUXgADBcQYQuYMd7+6xgTIxfoggIkFA/DkkvycdZpIARA==}
 
   '@types/navermaps@3.10.0':
     resolution: {integrity: sha512-itQXr1CPrVL0afCnMhu1ycasQ+cAoMsZXh5XfsVW+c84+e4L6TsuIUYArCFCh0Tsb9R/zWQJZW7GR0CYbF92hQ==}
@@ -6808,6 +6817,10 @@ snapshots:
   '@types/mdx@2.0.14': {}
 
   '@types/methods@1.1.4': {}
+
+  '@types/multer@2.3.0':
+    dependencies:
+      '@types/express': 5.0.6
 
   '@types/navermaps@3.10.0':
     dependencies:
