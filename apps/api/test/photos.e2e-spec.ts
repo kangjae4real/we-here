@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { signThumb, thumbExp } from '../src/core/thumb.js';
 import { THUMB_SECRET } from './env.js';
 import {
+  form,
+  jpeg,
+  key,
   newRoom,
   type PairedRoom,
   pairedRoom,
@@ -9,12 +12,6 @@ import {
 } from './fixtures.js';
 import { type Api, type CallResult, startApi } from './harness.js';
 
-const key = (n: number) => n.toString(16).padStart(64, '0');
-const jpeg = (size: number, fill = 1) => {
-  const bytes = new Uint8Array(size).fill(fill);
-  bytes.set([0xff, 0xd8, 0xff]);
-  return bytes;
-};
 const meta = (clientIndex: number, over: Record<string, unknown> = {}) => ({
   clientIndex,
   dedupeKey: key(clientIndex),
@@ -23,24 +20,6 @@ const meta = (clientIndex: number, over: Record<string, unknown> = {}) => ({
   dateTimeOriginal: '2022:04:09 15:12:03',
   ...over,
 });
-
-function form(
-  items: unknown,
-  thumbs: Record<number, Uint8Array<ArrayBuffer>> = {},
-  metaAsFile = false,
-): FormData {
-  const f = new FormData();
-  const text = typeof items === 'string' ? items : JSON.stringify(items);
-  if (metaAsFile) {
-    f.set('meta', new Blob([text], { type: 'application/json' }), 'meta.json');
-  } else {
-    f.set('meta', text);
-  }
-  for (const [n, bytes] of Object.entries(thumbs)) {
-    f.set(`thumb_${n}`, new Blob([bytes], { type: 'image/jpeg' }), `${n}.jpg`);
-  }
-  return f;
-}
 
 let api: Api;
 beforeAll(async () => {

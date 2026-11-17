@@ -28,9 +28,14 @@ export function midpoint(p: LatLng, q: LatLng): LatLng {
   return { lat: (p.lat + q.lat) / 2, lng: ((p.lng + dLng / 2 + 540) % 360) - 180 };
 }
 
-/** E11 box. Outside it the shell writes "해외" instead of geocoding. */
+/** E11's box. Inside it a photo is on KST; outside it a place is "해외" and never geocoded. */
 export function inKorea(p: LatLng): boolean {
   return p.lat >= 33 && p.lat <= 39 && p.lng >= 124 && p.lng <= 132;
+}
+
+/** The geocode cache key: 3 decimals, about 100 m. */
+export function labelKey(p: LatLng): string {
+  return `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`;
 }
 
 export function cellOf(p: LatLng): CellId {

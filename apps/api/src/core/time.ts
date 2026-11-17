@@ -1,4 +1,5 @@
 import type { LocalDate, LocalDateTime } from './domain.js';
+import { inKorea } from './geo.js';
 
 export const KST_OFFSET_MIN = 540;
 const OFFSET_MIN = -720;
@@ -36,11 +37,6 @@ export function kstDate(nowMs: number): LocalDate {
   return new Date(nowMs + KST_OFFSET_MIN * MINUTE)
     .toISOString()
     .slice(0, 10) as LocalDate;
-}
-
-/** E11's box; a photo inside it is on KST without asking anything else. */
-export function inKorea(p: { lat: number; lng: number }): boolean {
-  return p.lat >= 33 && p.lat <= 39 && p.lng >= 124 && p.lng <= 132;
 }
 
 /**

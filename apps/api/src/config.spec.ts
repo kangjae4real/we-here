@@ -33,4 +33,19 @@ describe('readConfig', () => {
       ],
     });
   });
+
+  it('geocodes nothing unless GEOCODER says otherwise', () => {
+    expect(readConfig(VALID)).toMatchObject({ config: { geocoder: 'none' } });
+  });
+
+  it('rejects an unknown GEOCODER and Naver without its keys', () => {
+    expect(readConfig({ ...VALID, GEOCODER: 'google' })).toEqual({
+      ok: false,
+      problems: ['GEOCODER must be one of none, fake, naver'],
+    });
+    expect(readConfig({ ...VALID, GEOCODER: 'naver' })).toEqual({
+      ok: false,
+      problems: ['NCP_CLIENT_ID is required', 'NCP_CLIENT_SECRET is required'],
+    });
+  });
 });

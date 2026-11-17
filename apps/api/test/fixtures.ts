@@ -41,3 +41,68 @@ export async function revisionOf(api: Api, room: TestRoom): Promise<number> {
   });
   return res.body.revision;
 }
+
+export const key = (n: number) => n.toString(16).padStart(64, '0');
+
+export const jpeg = (size: number, fill = 1) => {
+  const bytes = new Uint8Array(size).fill(fill);
+  bytes.set([0xff, 0xd8, 0xff]);
+  return bytes;
+};
+
+/** An uploadPhotos multipart body. */
+export function form(
+  items: unknown,
+  thumbs: Record<number, Uint8Array<ArrayBuffer>> = {},
+  metaAsFile = false,
+): FormData {
+  const f = new FormData();
+  const text = typeof items === 'string' ? items : JSON.stringify(items);
+  if (metaAsFile) {
+    f.set('meta', new Blob([text], { type: 'application/json' }), 'meta.json');
+  } else {
+    f.set('meta', text);
+  }
+  for (const [n, bytes] of Object.entries(thumbs)) {
+    f.set(`thumb_${n}`, new Blob([bytes], { type: 'image/jpeg' }), `${n}.jpg`);
+  }
+  return f;
+}
+
+export interface Shot {
+  lat: number;
+  lng: number;
+  /** EXIF `YYYY:MM:DD HH:mm:ss` */
+  at: string;
+  offset?: string;
+  thumb?: boolean;
+}
+
+let shotSerial = 1000;
+
+/** Uploads photos for one seat and returns their ids in order. */
+export async function uploadShots(
+  api: Api,
+  room: { roomId: string },
+  seat: Seat,
+  shots: Shot[],
+): Promise<string[]> {
+  const items = shots.map((s, clientIndex) => ({
+    clientIndex,
+    dedupeKey: key((shotSerial += 1)),
+    lat: s.lat,
+    lng: s.lng,
+    dateTimeOriginal: s.at,
+    ...(s.offset ? { offsetTimeOriginal: s.offset } : {}),
+  }));
+  const thumbs = Object.fromEntries(
+    shots.flatMap((s, i) => (s.thumb ? [[i, jpeg(200)]] : [])),
+  );
+  const res = await api.call('uploadPhotos', {
+    params: { roomId: room.roomId },
+    token: seat.token,
+    body: form(items, thumbs),
+  });
+  if (res.status !== 200) throw new Error(`uploadPhotos ${res.status}`);
+  return res.body.results.map((r: { photoId: string }) => r.photoId);
+}
