@@ -1,4 +1,6 @@
 import { type DynamicModule, Module } from '@nestjs/common';
+import { ChatController } from './chat/chat.controller.js';
+import { ChatService } from './chat/chat.service.js';
 import { CONFIG, type Config } from './config.js';
 import { Db } from './db/db.js';
 import { HealthController } from './health.controller.js';
@@ -23,6 +25,7 @@ export class AppModule {
         RoomsController,
         PhotosController,
         SnapshotController,
+        ChatController,
       ],
       providers: [
         { provide: CONFIG, useValue: config },
@@ -41,6 +44,7 @@ export class AppModule {
             ),
         },
         SnapshotService,
+        ChatService,
       ],
     };
   }

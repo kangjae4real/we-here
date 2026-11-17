@@ -11,4 +11,5 @@ export const TEST_ENV: Record<string, string> = {
   ROOM_CREATE_LIMIT_PER_HOUR: '100000',
   INVITE_PREVIEW_LIMIT_PER_HOUR: '100000',
   GEOCODER: 'fake',
+  LLM_PROVIDER: 'fake',
 };

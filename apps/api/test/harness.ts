@@ -3,6 +3,7 @@ import pg from 'pg';
 import { createApp } from '../src/app.js';
 import { readConfig } from '../src/config.js';
 import {
+  type JsonSchema,
   OPERATIONS,
   type OperationId,
   type OperationSpec,
@@ -27,9 +28,20 @@ export interface CallResult {
   body: any;
 }
 
+export interface OpenStream {
+  status: number;
+  headers: Headers;
+  /** NDJSON frames as they arrive, each checked against the YAML. */
+  frames: AsyncGenerator<any>;
+  /** Drops the connection, like a closed browser tab. */
+  disconnect(): void;
+}
+
 export interface Api {
   /** Calls one contract operation and fails the test unless the response matches the YAML exactly. */
   call(op: OperationId, req?: CallRequest): Promise<CallResult>;
+  /** Like `call` for a 200 NDJSON answer, but reads it frame by frame. Other statuses are read whole and checked. */
+  open(op: OperationId, req?: CallRequest): Promise<OpenStream | CallResult>;
   /** Off-contract request (unknown routes); only the global headers are checked. */
   raw(method: string, path: string, init?: RequestInit): Promise<CallResult>;
   sql<R = any>(text: string, params?: unknown[]): Promise<R[]>;
@@ -50,7 +62,7 @@ export async function startApi(
   const baseUrl = `http://127.0.0.1:${port}`;
   const pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 
-  async function call(op: OperationId, req: CallRequest = {}) {
+  function request(op: OperationId, req: CallRequest, signal?: AbortSignal) {
     const spec: OperationSpec = OPERATIONS[op];
     const path = spec.path.replace(/\{(\w+)\}/g, (_, name: string) => {
       const value = req.params?.[name];
@@ -70,16 +82,53 @@ export async function startApi(
     } else if (typeof body === 'string') {
       headers.set('Content-Type', 'application/json');
     }
-    const res = await fetch(url, {
+    return fetch(url, {
       method: spec.method.toUpperCase(),
       headers,
       body,
+      signal,
     });
-    const result = await read(res);
+  }
+
+  function check(op: OperationId, result: CallResult) {
     checkGlobalHeaders(op, result);
-    checkAgainstContract(op, spec, result);
+    checkAgainstContract(op, OPERATIONS[op], result);
     record(op, result.status);
     return result;
+  }
+
+  async function call(op: OperationId, req: CallRequest = {}) {
+    return check(op, await read(await request(op, req)));
+  }
+
+  async function open(op: OperationId, req: CallRequest = {}) {
+    const ctl = new AbortController();
+    const res = await request(op, req, ctl.signal);
+    if (mediaOf(res.headers) !== 'application/x-ndjson') {
+      return check(op, await read(res));
+    }
+    const head: CallResult = { status: res.status, headers: res.headers, body: '' };
+    check(op, head);
+    const spec: OperationSpec = OPERATIONS[op];
+    const schema =
+      spec.responses[String(res.status)].content['application/x-ndjson'].schema;
+    async function* frames() {
+      try {
+        for await (const line of ndjsonLines(res.body!)) {
+          const frame = JSON.parse(line);
+          checkFrame(op, schema, frame);
+          yield frame;
+        }
+      } catch (e) {
+        if (!ctl.signal.aborted) throw e;
+      }
+    }
+    return {
+      status: res.status,
+      headers: res.headers,
+      frames: frames(),
+      disconnect: () => ctl.abort(),
+    };
   }
 
   async function raw(method: string, path: string, init: RequestInit = {}) {
@@ -92,6 +141,7 @@ export async function startApi(
 
   return {
     call,
+    open,
     raw,
     baseUrl,
     async sql(text, params) {
@@ -160,6 +210,11 @@ function checkAgainstContract(
     const validate = validatorFor(content.schema);
     if (!validate(r.body)) fail(JSON.stringify(validate.errors));
   }
+  if (media === 'application/x-ndjson' && typeof r.body === 'string') {
+    for (const line of r.body.split('\n').filter(Boolean)) {
+      checkFrame(op, content.schema, JSON.parse(line));
+    }
+  }
 
   for (const [name, header] of Object.entries(response.headers ?? {})) {
     const value = r.headers.get(name);
@@ -168,4 +223,28 @@ function checkAgainstContract(
     const validate = validatorFor(header.schema);
     if (!validate(typed)) fail(`header ${name}=${value} does not match`);
   }
+}
+
+function checkFrame(op: OperationId, schema: JsonSchema, frame: unknown) {
+  const validate = validatorFor(schema);
+  if (!validate(frame)) {
+    throw new Error(
+      `${op} frame breaks the contract: ${JSON.stringify(validate.errors)}\n${JSON.stringify(frame)}`,
+    );
+  }
+}
+
+async function* ndjsonLines(body: ReadableStream<Uint8Array>) {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for await (const chunk of body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let end = buffer.indexOf('\n');
+    while (end >= 0) {
+      yield buffer.slice(0, end);
+      buffer = buffer.slice(end + 1);
+      end = buffer.indexOf('\n');
+    }
+  }
+  if (buffer) yield buffer;
 }

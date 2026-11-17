@@ -11,7 +11,8 @@ export type FieldIssueCode =
   | 'unknown_field'
   | 'control_chars'
   | 'conflict'
-  | 'self';
+  | 'self'
+  | 'not_found';
 
 export interface FieldIssue {
   field: string;

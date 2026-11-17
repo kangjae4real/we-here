@@ -39,6 +39,13 @@ export function kstDate(nowMs: number): LocalDate {
     .slice(0, 10) as LocalDate;
 }
 
+/** The instant the KST calendar day after `nowMs` starts. */
+export function nextKstMidnightMs(nowMs: number): number {
+  const day = 86_400_000;
+  const offset = KST_OFFSET_MIN * MINUTE;
+  return Math.floor((nowMs + offset) / day) * day + day - offset;
+}
+
 /**
  * E11 and E12. The zone comes from, in order: OffsetTimeOriginal, the Korea
  * box, the gap to the GPS clock (UTC) rounded to 15 minutes, and finally an

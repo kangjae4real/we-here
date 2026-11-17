@@ -1,4 +1,4 @@
-import { correctTime, type ExifClock } from './time.js';
+import { correctTime, type ExifClock, nextKstMidnightMs } from './time.js';
 
 const NOW = Date.parse('2026-11-17T00:00:00Z');
 const PARIS = { lat: 48.8566, lng: 2.3522 };
@@ -114,5 +114,13 @@ describe('correctTime: the local time itself (E12)', () => {
       ok: false,
       field: 'dateTimeOriginal',
     });
+  });
+});
+
+describe('nextKstMidnightMs', () => {
+  it('is 15:00 UTC on the day the KST date turns', () => {
+    const at = (iso: string) => new Date(nextKstMidnightMs(Date.parse(iso))).toISOString();
+    expect(at('2024-03-02T14:59:59Z')).toBe('2024-03-02T15:00:00.000Z');
+    expect(at('2024-03-02T15:00:00Z')).toBe('2024-03-03T15:00:00.000Z');
   });
 });

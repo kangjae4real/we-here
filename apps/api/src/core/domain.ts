@@ -4,6 +4,7 @@ type Brand<T, B extends string> = T & { readonly __brand: B };
 export type RoomId = Brand<string, 'RoomId'>;
 export type ParticipantId = Brand<string, 'ParticipantId'>;
 export type PhotoId = Brand<string, 'PhotoId'>;
+export type MessageId = Brand<string, 'MessageId'>;
 /** `YYYY-MM-DD` calendar date with no zone. */
 export type LocalDate = Brand<string, 'LocalDate'>;
 /** `YYYY-MM-DDTHH:mm:ss` wall-clock time with no zone. */
@@ -18,7 +19,7 @@ export function asRoomId(raw: string): RoomId | null {
 }
 
 /** Lowercased so ids compare equal to what Postgres returns. */
-export function asUuid<T extends ParticipantId | PhotoId>(
+export function asUuid<T extends ParticipantId | PhotoId | MessageId>(
   raw: string,
 ): T | null {
   const id = raw.toLowerCase();

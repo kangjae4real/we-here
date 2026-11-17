@@ -11,6 +11,7 @@ if (!parsed.ok) {
   process.exit(1);
 }
 const { config } = parsed;
+if (!config.llm.ok) console.warn(`Chat is off: ${config.llm.reason}`);
 
 const applied = await migrate(config.databaseUrl);
 if (applied.length) console.log(`Applied migrations: ${applied.join(', ')}`);
