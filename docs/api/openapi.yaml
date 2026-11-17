@@ -1,0 +1,1776 @@
+openapi: 3.1.0
+info:
+  title: we-here API
+  version: 0.1.0-draft
+  summary: 두 사람의 사진 위치로 '스친 순간'을 찾는 we-here의 NestJS API 계약 초안
+  description: |
+    NestJS(`apps/api`) 구현 전에 합의하기 위한 **설계 우선(design-first) 계약 초안**이다.
+
+    **근거 자료**
+    - Figma Make 프로토타입 "두 사람의 스친 순간 찾기" (화면 01~10, 상태 S1~S8)
+    - `docs/designs/we-here.md`의 API 계약과 수용 항목(O3, O6, O12, O14, O23, X3, X5, X6, X8, X9, E2, E3, E9, E10, E21, E22, E27, G1)
+
+    **공통 규칙**
+    - 브라우저는 API를 직접 부르지 않는다. web의 `next.config.ts` rewrites가 `/api/v1/*`를 이 API로 프록시한다.
+      이 문서의 경로에는 `/api/v1` 접두어가 없다.
+    - 인증: `X-Participant-Token` 헤더. 예외는 `GET /health`, `POST /rooms`, `GET /rooms/{roomId}/invite`,
+      `POST /rooms/{roomId}/participants`, `GET /thumbs/{photoId}`(서명으로 인증) 다섯 개다.
+    - 오류 본문은 모두 `application/problem+json`(`Problem`)이고, 화면 분기는 `status`가 아니라 `code`로 한다.
+    - 토큰이 없거나 이 방의 어떤 참여자와도 맞지 않으면 **401 `invalid_token`만** 준다.
+      403은 권한 거부(남의 사진, 썸네일 서명, 초대 비밀값, AI 동의)에만, 404는 대상이 없을 때만 쓴다.
+    - 방을 바꾸는 요청(업로드, 삭제, 참여, 나가기, 내보내기, 만난 날 수정, AI 동의 변경)은 행이 하나 이상 바뀌면
+      `rooms.revision`을 정확히 1 올리고 새 `revision`을 응답에 담는다.
+    - 채팅 메시지는 `revision`을 올리지 않는다(스냅샷과 무관). 상대의 새 메시지는 `GET /rooms/{roomId}`의 `chatLastMessageId`로 알아챈다.
+    - JSON 응답에는 `Cache-Control: no-store`, 모든 응답에는 `X-Content-Type-Options: nosniff`를 붙인다.
+    - 모든 응답 헤더와 오류 본문에 `x-request-id`(`requestId`)가 있다.
+
+    **프론트엔드는 이 API하고만 통신한다**
+    - 외부 서비스 호출(LLM, 네이버 역지오코딩)은 모두 이 API가 서버에서 한다. 키는 API 서버에만 있다.
+    - AI 채팅도 이 API의 `POST /rooms/{roomId}/chat`이 맡는다. Next.js 채팅 Route Handler는 두지 않는다.
+    - 채팅 모델은 서버 env로 하나만 고른다. 모델 선택 옵션과 모델 관련 요청 필드는 없다.
+    - 채팅 기록은 방 단위로 서버에 저장하고 두 참여자가 같은 대화를 본다. 방이 만료되면 함께 지운다.
+    - **LLM 제공자는 아직 정하지 않았다.** 이 계약은 제공자와 무관하게 만든다.
+      서버는 `LlmProvider` 인터페이스(스트리밍 생성 하나) 뒤에 제공자별 어댑터를 두고,
+      env `LLM_PROVIDER`(예: `nvidia`, `openai`, `anthropic`, `gemini`), `LLM_MODEL`, `LLM_API_KEY`,
+      `LLM_BASE_URL`(OpenAI 호환 엔드포인트일 때만)로 고른다. 제공자를 바꿔도 요청·응답·오류 code는 그대로다.
+      제공자 이름과 모델 이름은 응답에 싣지 않는다.
+    - 예외: 네이버 지도 JS SDK와 지도 타일은 브라우저가 네이버에서 직접 받는다(지도 SDK 구조상 프록시할 수 없다).
+
+    **이 API로 오지 않는 것**
+    - "위치 없음 / 촬영 시각 없음" 집계(화면 06c)는 브라우저가 EXIF를 읽고 걸러낸 결과라 API로 오지 않는다.
+servers:
+  - url: http://localhost:4000
+    description: 로컬 API 직접 호출
+  - url: http://localhost:3000/api/v1
+    description: web 프록시 경유 (브라우저가 쓰는 경로)
+tags:
+  - name: system
+    description: 상태 확인
+  - name: rooms
+    description: 방 만들기, 초대, 참여, 설정 (화면 01~04, 10, S2, S7, S8)
+  - name: photos
+    description: 사진 메타데이터와 썸네일 업로드·삭제 (화면 06a~06d, S3)
+  - name: analysis
+    description: 기록, 리플레이, 스친 순간, 히트맵 데이터 (화면 05, 07~08, S1, S4)
+  - name: chat
+    description: AI 채팅과 방별 대화 기록 (화면 09, S5, S6). 모델은 서버에서 고정한다.
+
+security:
+  - ParticipantToken: []
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: 서버와 DB 연결 확인
+      description: 발표 전 API를 미리 깨울 때도 쓴다. DB 쿼리까지 성공해야 200이다.
+      security: []
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 정상
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: DB 연결 실패
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Problem'
+                  - type: object
+                    properties:
+                      checks:
+                        type: object
+                        properties:
+                          db:
+                            type: string
+                            enum: [ok, fail]
+
+  /rooms:
+    post:
+      tags: [rooms]
+      operationId: createRoom
+      summary: 방 만들기 (화면 02a~02c)
+      description: |
+        방을 만들고 만든 사람을 참여자 A로 자동 참여시킨다.
+        응답의 `token`은 이 응답에서만 받을 수 있다(서버는 SHA-256 해시만 저장한다).
+        초대 링크는 FE가 `/r/{roomId}#i={inviteSecret}`, 내 다른 기기 링크는 `/r/{roomId}#t={token}`으로 만든다.
+        IP당 시간당 `ROOM_CREATE_LIMIT_PER_HOUR`회(기본 10)로 제한한다.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoomRequest'
+            example:
+              name: 우리 둘의 지도
+              nickname: 서연
+              metOn: '2024-03-02'
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '201':
+          description: 생성됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateRoomResponse'
+              example:
+                roomId: Zk3uP1xQx0aN8sYbVb2c9w
+                participantId: 6f1c2a9e-1c7b-4c1e-9a40-0b6f6e1f3a11
+                token: Q2l0eS1vZi1saWdodHMtYW5kLXJpdmVy
+                inviteSecret: 8fk2-syQvT0pLx3mR9aW1bg
+                expiresAt: '2024-04-01T00:00:00Z'
+                revision: 1
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /rooms/{roomId}/invite:
+    get:
+      tags: [rooms]
+      operationId: getInvitePreview
+      summary: 초대 미리보기 (화면 04, S7, S8)
+      description: |
+        초대 링크로 들어온 사람에게 보여줄 정보다. 토큰이 필요 없고 초대 비밀값으로 확인한다.
+        `status`가 `full`이면 FE는 S7 "이 방은 이미 두 명이 꽉 찼어"를 보여준다.
+        만료된 방은 404 `room_expired`(S8)이다.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: X-Invite-Secret
+          in: header
+          required: true
+          description: 초대 링크 fragment `#i=` 뒤의 값
+          schema:
+            $ref: '#/components/schemas/Secret'
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 미리보기
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitePreview'
+              example:
+                roomId: Zk3uP1xQx0aN8sYbVb2c9w
+                name: 우리 둘의 지도
+                inviterNickname: 서연
+                metOn: '2024-03-02'
+                status: open
+                vacantSlot: B
+        '403':
+          $ref: '#/components/responses/InviteInvalid'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /rooms/{roomId}/participants:
+    post:
+      tags: [rooms]
+      operationId: joinRoom
+      summary: 초대받은 사람 입장 (화면 04)
+      description: |
+        참여자 B로 들어온다. 방 행을 잠근 뒤 처리하므로 동시에 두 명이 들어와도 한 명만 성공한다.
+        IP당 시간당 10회 제한은 `POST /rooms`와 같다.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinRoomRequest'
+            example:
+              nickname: 도윤
+              inviteSecret: 8fk2-syQvT0pLx3mR9aW1bg
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '201':
+          description: 참여 완료
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinRoomResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '403':
+          $ref: '#/components/responses/InviteInvalid'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+        '409':
+          description: 정원(2명)이 이미 찼다 (S7)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://we-here.app/problems/room_full
+                title: Room is full
+                status: 409
+                code: room_full
+                requestId: 7c0e2b1d-5a8f-4e7a-9b1d-2f6c3e8a9d10
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /rooms/{roomId}:
+    get:
+      tags: [rooms]
+      operationId: getRoom
+      summary: 방 정보 (상단 바, 기록 탭 숫자, 방 설정, 폴링)
+      description: |
+        방 화면은 이전 응답이 끝나고 10초 뒤 이 요청을 다시 보낸다(겹치지 않는 폴링).
+        `revision`이 알고 있는 값보다 커지면 `GET /rooms/{roomId}/snapshot`을 다시 받는다.
+        상대가 아직 없으면 `participants`가 1명이다(S2). 404를 받으면 FE는 저장된 토큰을 지운다.
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 방 정보
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+              example:
+                roomId: Zk3uP1xQx0aN8sYbVb2c9w
+                name: 우리 둘의 지도
+                metOn: '2024-03-02'
+                expiresAt: '2024-04-01T00:00:00Z'
+                revision: 14
+                meId: 6f1c2a9e-1c7b-4c1e-9a40-0b6f6e1f3a11
+                inviteSecret: null
+                participants:
+                  - id: 6f1c2a9e-1c7b-4c1e-9a40-0b6f6e1f3a11
+                    nickname: 서연
+                    slot: A
+                    photoCount: 128
+                    aiConsent: true
+                  - id: 0d8b7c55-2e14-4f7a-8a6e-1b2c3d4e5f60
+                    nickname: 도윤
+                    slot: B
+                    photoCount: 96
+                    aiConsent: true
+                chat:
+                  used: 3
+                  limit: 30
+                  resetAt: '2024-03-20T13:00:00Z'
+                chatLastMessageId: 7c1e2f0a-9b3d-4e5f-8a6b-0c1d2e3f4a5b
+                photoLimit: 2000
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+    patch:
+      tags: [rooms]
+      operationId: updateRoom
+      summary: 처음 만난 날 바꾸기 (화면 10)
+      description: 두 참여자 모두 바꿀 수 있다. 바뀌면 1·2막과 3막 경계가 달라지므로 `revision`이 오른다.
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoomRequest'
+            example:
+              metOn: '2024-03-02'
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 수정됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateRoomResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+
+  /rooms/{roomId}/participants/me:
+    patch:
+      tags: [rooms, chat]
+      operationId: updateMe
+      summary: AI 채팅 동의 켜기·철회
+      description: |
+        두 참여자가 모두 `aiConsent: true`여야 `POST /rooms/{roomId}/chat`이 동작한다.
+        한 명이라도 철회하면 이후 채팅 요청은 403 `ai_consent_required`이다.
+        상대를 내보내고 새로 들어온 사람은 `false`로 시작한다.
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 변경됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateMeResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+    delete:
+      tags: [rooms]
+      operationId: leaveRoom
+      summary: 방 나가기 (화면 10b)
+      description: |
+        내 사진과 내 자리를 지운다. 남은 사람이 없으면 방도 지운다.
+        방의 채팅 기록도 모두 지운다(AI 답변에 나간 사람의 사진에서 나온 내용이 섞여 있다).
+        남은 사람이 있으면 초대 비밀값을 새로 만든다(예전 초대 링크는 403).
+        Nest 라우트는 `participants/me`를 `participants/:participantId`보다 먼저 선언한다.
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 나감
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveRoomResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+
+  /rooms/{roomId}/participants/{participantId}:
+    delete:
+      tags: [rooms]
+      operationId: removePartner
+      summary: 상대 자리 비우기 (화면 10a)
+      description: |
+        상대의 자리와 그 사진을 모두 지운다. 상대가 개인 링크(토큰)를 잃었을 때 쓰는 유일한 예외 동작이다.
+        방의 채팅 기록도 모두 지운다(나가기와 같은 이유).
+        초대 비밀값을 새로 만들어 응답에 담는다(FE는 새 초대 링크로 S2 화면을 보여준다).
+        자기 자신의 id면 400 `validation_failed`다.
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: participantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 비움
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemovePartnerResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: 방이 없거나, 그 참여자가 이 방에 없다
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /rooms/{roomId}/photos:
+    post:
+      tags: [photos]
+      operationId: uploadPhotos
+      summary: 사진 메타데이터·썸네일 배치 업로드 (화면 06b)
+      description: |
+        브라우저가 EXIF에서 읽은 값과 긴 변 320px JPEG 썸네일만 보낸다. 원본 사진은 오지 않는다.
+        FE는 좌표와 `DateTimeOriginal`이 둘 다 있는 사진만 보내고, 요청 하나를 **50장 또는 2MB** 중 먼저 닿는 쪽으로 자른다.
+
+        **multipart 구성**
+        - part `meta`: `PhotoMeta` JSON 배열
+        - part `thumb_{clientIndex}`: 해당 사진의 JPEG 썸네일(40KB 이하). 썸네일이 없으면 생략한다.
+
+        **저장 규칙**
+        - `(participantId, dedupeKey)`가 이미 있으면 덮어쓰지 않고 `duplicate`다.
+          단, 기존 썸네일이 없거나 새 썸네일보다 작으면 썸네일만 채운다.
+        - 사진 하나가 잘못되면 그 사진만 `error`이고 나머지는 저장된다.
+        - 참여자당 `PHOTO_LIMIT_PER_PARTICIPANT`(기본 2,000)를 넘는 사진은 `photo_limit_reached`다.
+        - 좌표는 소수 4자리(약 11m)로 반올림해 저장한다.
+        - 하나라도 저장되면 `revision`이 1 오르고, 전부 `duplicate`면 그대로다.
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [meta]
+              properties:
+                meta:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items:
+                    $ref: '#/components/schemas/PhotoMeta'
+              additionalProperties:
+                description: '`thumb_{clientIndex}` 이름의 JPEG 파일 파트'
+                type: string
+                contentMediaType: image/jpeg
+            encoding:
+              meta:
+                contentType: application/json
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 사진별 결과 (요청 `meta` 순서와 같다)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadPhotosResponse'
+              example:
+                revision: 15
+                results:
+                  - clientIndex: 0
+                    dedupeKey: 3f2a6c0e9b1d4a7f8e2c5b9a0d1f3e6c7b8a9d0e1f2a3b4c5d6e7f8091a2b3c4
+                    status: saved
+                    photoId: 9b2f4c1a-7d3e-4f80-a1b2-c3d4e5f60718
+                  - clientIndex: 1
+                    dedupeKey: 0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9
+                    status: duplicate
+                    photoId: 1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f
+                  - clientIndex: 2
+                    dedupeKey: ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100
+                    status: error
+                    error:
+                      code: invalid_datetime
+                      field: dateTimeOriginal
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+        '413':
+          description: 50장 또는 2MB를 넘었다. FE는 영구 실패로 표시하고 다시 시도 버튼을 띄우지 않는다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://we-here.app/problems/batch_too_large
+                title: Batch too large
+                status: 413
+                code: batch_too_large
+                requestId: 7c0e2b1d-5a8f-4e7a-9b1d-2f6c3e8a9d10
+
+  /rooms/{roomId}/participants/me/photos:
+    delete:
+      tags: [photos]
+      operationId: deleteMyPhotos
+      summary: 내 사진 전체 삭제
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 삭제됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletePhotosResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+
+  /rooms/{roomId}/photos/{photoId}:
+    delete:
+      tags: [photos]
+      operationId: deletePhoto
+      summary: 내 사진 한 장 삭제
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - $ref: '#/components/parameters/PhotoId'
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 삭제됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletePhotosResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 상대의 사진이다 (`not_owner`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: 방이 없거나, 이 방에 그 사진이 없다 (`room_not_found`, `photo_not_found`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /thumbs/{photoId}:
+    get:
+      tags: [photos]
+      operationId: getThumbnail
+      summary: 썸네일 이미지 (서명 URL)
+      description: |
+        `<img>`는 헤더를 보낼 수 없어서 토큰 대신 서명으로 인증한다.
+        `sig = HMAC-SHA256(THUMB_SIGNING_SECRET, photoId + "." + exp)`(hex), 유효 기간 최대 24시간이며 방의 `expiresAt`을 넘지 않는다.
+        스냅샷의 `thumbUrl`이 이 경로를 상대 경로로 담고, FE가 앞에 `/api/v1`을 붙인다.
+        로드에 실패하면 FE는 스냅샷을 한 번 다시 받아 URL을 바꾼다.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PhotoId'
+        - name: exp
+          in: query
+          required: true
+          description: 만료 시각 (Unix 초, 1시간 단위로 올림)
+          schema:
+            type: integer
+        - name: sig
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{64}$'
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: JPEG 썸네일
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, max-age=86400
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                contentMediaType: image/jpeg
+        '403':
+          description: 서명이 틀렸거나 만료됐다 (`thumb_signature_invalid`, `thumb_signature_expired`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: 사진이 지워졌거나 방이 만료됐다 (`photo_not_found`, `room_expired`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /rooms/{roomId}/snapshot:
+    get:
+      tags: [analysis]
+      operationId: getSnapshot
+      summary: 방 화면 데이터 한 벌 (화면 05, 07~08, S1, S4)
+      description: |
+        사진 목록과 분석 결과(스친 순간, 히트맵, 3막 스토리, 기록 탭 요약)를 **REPEATABLE READ 트랜잭션 하나**에서 읽어 돌려준다.
+        그래서 `encounters`가 `photos`에 없는 사진을 가리키는 일이 없다.
+
+        **분석 규칙 요약**
+        - 만난 날 기준: 사진의 현지 날짜 `< metOn`이면 "만나기 전"(1·2막), `>= metOn`이면 "만난 후"(3막).
+        - 스친 순간(2막): 두 사진 모두 만나기 전, ±10분, 250m 이내. 30분 이내로 이어지고 첫 후보와 500m 안이면 하나로 묶는다.
+          두 사람의 `dedupeKey`가 같은 쌍(공유받은 같은 사진)은 뺀다.
+        - 1막(같은 곳, 다른 때): 만나기 전 두 사람이 모두 다녀간 약 150m 칸 중 스친 순간이 아닌 곳. 시간 차가 작은 순으로 최대 10칸.
+        - 히트맵·3막: 만난 후 칸별 **서로 다른 날 수**(같은 날 50장도 1일). 둘 중 **누구라도** 그날 그 칸에 사진을 남겼으면 센다.
+          두 사람이 같은 날 함께 갔는지는 따지지 않는다. 그래서 화면 문구는 "함께 간 곳"이 아니라 "만난 뒤 우리 기록"이다(O20).
+
+        **장소 이름(`placeLabel`) 채우는 시점**
+        - 화면에 이름이 나오는 항목(스친 순간, 가장 가까웠던 순간, 1막 카드, 히트맵 `top`, 기록 탭 `stats`)만
+          이 요청 안에서 역지오코딩한다. 좌표 소수 3자리(약 100m) 키로 DB에 캐시하고, 동시 4개·전체 3초 예산을 넘으면 null로 둔다.
+        - null이었던 이름은 다음 스냅샷 요청 때 다시 시도한다. 이름이 채워져도 `revision`은 오르지 않는다.
+        - `photos[].placeLabel`과 `heatmap.cells[].placeLabel`은 캐시에 있을 때만 채우고 새로 조회하지 않는다.
+        - 한국 밖 좌표는 조회하지 않고 "해외"로 쓴다.
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 스냅샷
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+              example:
+                revision: 14
+                criteria:
+                  radiusM: 250
+                  windowMin: 10
+                  mergeGapMin: 30
+                stats:
+                  oldest:
+                    takenLocal: '2019-06-02T14:20:00'
+                    placeLabel: 홍대
+                  newest:
+                    takenLocal: '2024-03-10T18:05:00'
+                    placeLabel: 성수동
+                  afterMetPlaceCount: 23
+                photos:
+                  - id: 9b2f4c1a-7d3e-4f80-a1b2-c3d4e5f60718
+                    participantId: 6f1c2a9e-1c7b-4c1e-9a40-0b6f6e1f3a11
+                    dedupeKey: 3f2a6c0e9b1d4a7f8e2c5b9a0d1f3e6c7b8a9d0e1f2a3b4c5d6e7f8091a2b3c4
+                    lat: 37.5284
+                    lng: 126.9341
+                    takenLocal: '2022-04-09T15:12:00'
+                    takenUtc: '2022-04-09T06:12:00Z'
+                    tzOffsetMin: 540
+                    timeSource: offset
+                    uncertain: false
+                    placeLabel: 여의도 한강공원
+                    thumbUrl: /thumbs/9b2f4c1a-7d3e-4f80-a1b2-c3d4e5f60718?exp=1710936000&sig=4e1f0c2b9a8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f
+                    uploadedAt: '2024-03-12T10:04:31Z'
+                encounters:
+                  - id: E-k3x9a2
+                    a:
+                      participantId: 6f1c2a9e-1c7b-4c1e-9a40-0b6f6e1f3a11
+                      photoId: 9b2f4c1a-7d3e-4f80-a1b2-c3d4e5f60718
+                      takenLocal: '2022-04-09T15:12:00'
+                    b:
+                      participantId: 0d8b7c55-2e14-4f7a-8a6e-1b2c3d4e5f60
+                      photoId: 2a3b4c5d-6e7f-4801-92a3-b4c5d6e7f809
+                      takenLocal: '2022-04-09T15:20:00'
+                    distanceM: 210
+                    gapMin: 8
+                    center:
+                      lat: 37.5279
+                      lng: 126.9352
+                    placeLabel: 여의도 한강공원
+                    uncertain: false
+                closest: []
+                heatmap:
+                  cells:
+                    - cellId: P-wydm9q
+                      lat: 37.5446
+                      lng: 127.0557
+                      days: 14
+                      weight: 1
+                      placeLabel: 성수동
+                  top:
+                    - rank: 1
+                      cellId: P-wydm9q
+                      placeLabel: 성수동
+                      days: 14
+                story:
+                  act1:
+                    total: 7
+                    items:
+                      - cellId: P-wydjx2
+                        placeLabel: 홍대
+                        a:
+                          participantId: 6f1c2a9e-1c7b-4c1e-9a40-0b6f6e1f3a11
+                          photoId: 3c4d5e6f-7081-4923-a4b5-c6d7e8f90a1b
+                          takenLocal: '2021-10-03T13:00:00'
+                        b:
+                          participantId: 0d8b7c55-2e14-4f7a-8a6e-1b2c3d4e5f60
+                          photoId: 4d5e6f70-8192-4a34-b5c6-d7e8f90a1b2c
+                          takenLocal: '2021-10-03T16:10:00'
+                        sameDay: true
+                        gapMin: 190
+                  act2:
+                    encounterIds: [E-k3x9a2]
+                  act3:
+                    from: '2024-03-02'
+                    placeCount: 23
+                    dayCount: 41
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+
+  /rooms/{roomId}/chat/messages:
+    get:
+      tags: [chat]
+      operationId: listChatMessages
+      summary: 방의 채팅 기록 (화면 09 진입, 새로고침, 상대 메시지 갱신)
+      description: |
+        방 단위로 저장된 대화를 오래된 순으로 돌려준다. 두 참여자가 같은 기록을 본다.
+        - 처음 열 때: 파라미터 없이 → 최근 `limit`개
+        - 위로 스크롤: `before={가장 오래된 id}` → 그보다 이전 `limit`개
+        - 폴링 중 `Room.chatLastMessageId`가 바뀌었을 때: `after={가진 마지막 id}` → 그 뒤 메시지 전부(최대 `limit`)
+        `before`와 `after`를 같이 보내면 400이다. 모르는 id면 400 `validation_failed`다.
+
+        답하는 중인 assistant 메시지는 `status: streaming`과 지금까지 만든 `content`로 온다.
+        상대 화면에서 "답하는 중…"을 보여주는 데 쓰고, 다음 폴링에서 `complete` 등으로 바뀐다.
+        AI 동의가 없어도 기록은 읽을 수 있다(동의 철회 뒤에도 지난 대화는 보인다).
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+        - name: before
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: after
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 메시지 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistory'
+              example:
+                messages:
+                  - id: 3f6a1b2c-4d5e-4f60-8a7b-9c0d1e2f3a4b
+                    role: user
+                    authorId: 9b2f3c1e-6a7d-4c2b-9f10-3e4d5a6b7c8d
+                    content: 우리 처음 스친 곳 어디야?
+                    evidenceIds: []
+                    status: complete
+                    createdAt: '2024-03-20T12:01:10Z'
+                  - id: 7c1e2f0a-9b3d-4e5f-8a6b-0c1d2e3f4a5b
+                    role: assistant
+                    authorId: null
+                    content: 2022년 4월 9일, 둘 다 여의도 한강공원에 있었어. 고작 210m, 8분 차이로! [E-k3x9a2]
+                    evidenceIds: [E-k3x9a2]
+                    status: complete
+                    createdAt: '2024-03-20T12:01:11Z'
+                hasMore: false
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+
+  /rooms/{roomId}/chat:
+    post:
+      tags: [chat]
+      operationId: chat
+      summary: AI에게 묻기 (화면 09, S5, S6)
+      description: |
+        질문 하나를 받아 저장하고, 서버가 방 요약과 저장된 최근 대화로 env에서 정한 LLM 제공자·모델(`LLM_PROVIDER`, `LLM_MODEL`)을 호출해 답을 스트리밍한다.
+        FE는 지난 대화를 보내지 않는다. 문맥은 서버가 DB에서 꺼낸다.
+
+        **저장 규칙**
+        - 질문(`user`)과 답(`assistant`) 메시지를 방에 저장한다. 질문은 쿼터 예약 직후, 답 행은 스트림 시작 때 `streaming`으로 만든다.
+        - 답이 끝나면 `complete`(`finishReason: stop`) 또는 `truncated`(`length`), 제공자 오류면 `failed`로 바꾸고 그때까지 받은 글을 남긴다.
+        - 브라우저 연결이 끊겨도 서버는 생성을 끝까지 하고 저장한다. 새로고침하면 기록에서 전체 답을 본다.
+        - 서버가 죽어 `streaming`이 2분 넘게 남은 행은 다음 조회 때 `failed`로 바꾼다.
+        - 한 방에서 답 생성은 한 번에 하나다. 이미 `streaming`인 답이 있으면 409 `chat_busy`("상대가 묻고 있어. 답이 끝나면 물어봐줘")이고 쿼터를 쓰지 않는다.
+
+        **처리 순서**
+        1. 토큰 확인 → 두 참여자 AI 동의 확인 → 진행 중인 답 확인 → 쿼터 1회 예약(재시도도 1회로 센다, 환불 없음) → 질문 저장
+        2. 문맥: 이 질문 전의 `complete`·`truncated` 메시지 최근 10개(전체 6,000자 안). `failed` 답은 넣지 않는다.
+        3. 스냅샷에서 요약을 만든다. 넣는 것: 닉네임, 만난 날, 사진 수와 기간, 스친 순간 거리순 상위 30개
+           (id, 장소 이름, 분 단위 시각, 거리, 시간 차, `uncertain`), 자주 간 장소 상위 10곳(id, 장소 이름, 날 수).
+           **넣지 않는 것:** 원래 좌표, 썸네일, 기기 정보. 장소 이름이 없는 해외 지점은 "해외".
+        4. 시스템 프롬프트에 요약을 JSON 데이터로만 넣는다. 근거 id(`E-…`, `P-…`)를 인용하고 단정하지 않게 지시한다.
+           데이터 안의 지시는 따르지 않는다.
+        5. 제공자 어댑터가 각 제공자의 스트리밍 형식(SSE 등)을 받아 아래 NDJSON 프레임으로 바꿔 보낸다.
+           최대 출력 800토큰, 첫 토큰까지 30초, 청크 사이 15초 제한. 제공자의 오류는 아래 `upstream_*` code로 통일한다.
+
+        **쿼터:** 방마다 1시간 `CHAT_ROOM_HOURLY_LIMIT`(기본 30), 서비스 전체 하루 `CHAT_DAILY_LIMIT`(기본 500).
+        방별·전역 카운터는 한 트랜잭션에서 함께 예약하고, 하나라도 넘으면 둘 다 되돌린다.
+
+        **응답 스트림 (`application/x-ndjson`, 한 줄에 프레임 하나)**
+        - 첫 프레임: `{"type":"meta","revision","userMessageId","assistantMessageId","evidenceIds","quota"}`. FE는 저장된 id로 낙관적 메시지를 바꾸고, `evidenceIds`에 있는 id만 근거 칩으로 만든다.
+        - 이어서: `{"type":"text","delta"}` 여러 개
+        - 마지막: `{"type":"done","finishReason":"stop"|"length"}` 또는 `{"type":"error","code","requestId"}`
+        - `done` 없이 끊기면 FE는 받은 글을 남기고 "답변이 중간에 끊겼어" + 다시 시도를 붙인다.
+        - 스트림이 시작되기 전의 오류는 일반 HTTP 상태 + problem+json으로 보낸다.
+      parameters:
+        - $ref: '#/components/parameters/RoomId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            example:
+              content: 우리 처음 스친 곳 어디야?
+      responses:
+        default:
+          $ref: '#/components/responses/ServerError'
+        '200':
+          description: 답변 스트림
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: '#/components/schemas/ChatFrame'
+              example: |
+                {"type":"meta","revision":14,"userMessageId":"3f6a1b2c-4d5e-4f60-8a7b-9c0d1e2f3a4b","assistantMessageId":"7c1e2f0a-9b3d-4e5f-8a6b-0c1d2e3f4a5b","evidenceIds":["E-k3x9a2","P-wydm9q"],"quota":{"used":4,"limit":30,"resetAt":"2024-03-20T13:00:00Z"}}
+                {"type":"text","delta":"2022년 4월 9일, 둘 다 여의도 한강공원에 있었어. "}
+                {"type":"text","delta":"고작 210m, 8분 차이로! [E-k3x9a2]"}
+                {"type":"done","finishReason":"stop"}
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 두 참여자의 AI 동의가 아직 없다 (`ai_consent_required`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/RoomNotFound'
+        '409':
+          description: 이 방에서 다른 답을 만드는 중이다 (`chat_busy`). 쿼터는 쓰지 않는다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: |
+            쿼터 초과 (S6 "오늘은 여기까지!"). `room_chat_quota_exceeded`(방별 1시간)와 `global_chat_quota_exceeded`(전체 하루)를 구분한다.
+            LLM 제공자가 429를 주면 `upstream_rate_limited`("잠깐 붐벼. 조금 있다 다시 물어봐줄래?")이다.
+          headers:
+            Retry-After:
+              description: 다시 시도할 수 있을 때까지 남은 초
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Problem'
+                  - type: object
+                    properties:
+                      resetAt:
+                        type: string
+                        format: date-time
+                        description: 쿼터 초과일 때만
+        '502':
+          description: LLM 제공자 쪽 오류 (`upstream_error`). 키 문제, 크레딧 소진, 5xx, 빈 응답·거절을 모두 포함한다. S5 "답을 못 가져왔어".
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: 첫 토큰까지 30초를 넘겼다 (`upstream_timeout`). S5와 같은 화면.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+components:
+  securitySchemes:
+    ParticipantToken:
+      type: apiKey
+      in: header
+      name: X-Participant-Token
+      description: 방 만들기·참여 응답으로 받은 참여자 토큰. FE는 `localStorage`에 방별로 저장한다.
+
+  parameters:
+    RoomId:
+      name: roomId
+      in: path
+      required: true
+      description: 128bit 랜덤 값 (base64url 22자)
+      schema:
+        $ref: '#/components/schemas/RoomId'
+    PhotoId:
+      name: photoId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Unauthorized:
+      description: 토큰이 없거나 이 방의 참여자와 맞지 않는다 (`invalid_token`). 나가기·내보내기 뒤의 토큰도 여기에 해당한다.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://we-here.app/problems/invalid_token
+            title: Invalid participant token
+            status: 401
+            code: invalid_token
+            requestId: 7c0e2b1d-5a8f-4e7a-9b1d-2f6c3e8a9d10
+    RoomNotFound:
+      description: 방이 없거나(`room_not_found`) 30일이 지나 지워졌다(`room_expired`, S8)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://we-here.app/problems/room_expired
+            title: Room expired
+            status: 404
+            code: room_expired
+            requestId: 7c0e2b1d-5a8f-4e7a-9b1d-2f6c3e8a9d10
+    InviteInvalid:
+      description: 초대 비밀값이 틀렸거나, 자리가 비워진 뒤의 예전 링크다 (`invite_invalid`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ValidationFailed:
+      description: 입력 검증 실패 (`validation_failed`). 입력값은 되돌려 보내지 않는다.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://we-here.app/problems/validation_failed
+            title: Validation failed
+            status: 400
+            code: validation_failed
+            requestId: 7c0e2b1d-5a8f-4e7a-9b1d-2f6c3e8a9d10
+            errors:
+              - field: nickname
+                code: too_long
+    ServerError:
+      description: |
+        예상하지 못한 서버 오류(500 `internal_error`), 또는 필수 env가 빠진 설정 오류(503 `server_misconfigured`).
+        FE는 "오류 ID {requestId 앞 8자}"를 작게 보여주고 다시 시도를 띄운다.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RateLimited:
+      description: IP당 요청 한도 초과 (`rate_limited`)
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+  schemas:
+    RoomId:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{22}$'
+      examples: [Zk3uP1xQx0aN8sYbVb2c9w]
+    Secret:
+      type: string
+      description: 128bit 랜덤 값 (base64url 22자)
+      pattern: '^[A-Za-z0-9_-]{22}$'
+    Nickname:
+      type: string
+      description: 앞뒤 공백 제거 후 1~20자, 제어 문자 금지
+      minLength: 1
+      maxLength: 20
+    MetOn:
+      type: string
+      format: date
+      description: 처음 만난 날 `YYYY-MM-DD`. 1990-01-01부터 오늘(KST)까지.
+      examples: ['2024-03-02']
+    LocalDateTime:
+      type: string
+      description: 사진이 찍힌 현지 시각 (시간대 없음, `YYYY-MM-DDTHH:mm:ss`)
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+      examples: ['2022-04-09T15:12:00']
+    Revision:
+      type: integer
+      minimum: 0
+      description: 방 내용이 바뀔 때마다 1씩 오르는 값. FE 폴링과 갱신 판단에 쓴다.
+    Slot:
+      type: string
+      enum: [A, B]
+      description: A는 방을 만든 사람(파란 원), B는 초대받은 사람(주황 마름모)
+
+    ErrorCode:
+      type: string
+      description: |
+        화면 분기에 쓰는 오류 코드. 기준 목록은 `packages/contracts/src/index.ts`에 둔다.
+        FE는 모르는 code를 `status` 기준 기본 문구로 처리한다.
+      enum:
+        - invalid_token
+        - room_not_found
+        - room_expired
+        - room_full
+        - invite_invalid
+        - not_owner
+        - thumb_signature_invalid
+        - thumb_signature_expired
+        - photo_not_found
+        - validation_failed
+        - batch_too_large
+        - room_chat_quota_exceeded
+        - global_chat_quota_exceeded
+        - rate_limited
+        - ai_consent_required
+        - chat_busy
+        - upstream_rate_limited
+        - upstream_timeout
+        - upstream_error
+        - server_misconfigured
+        - internal_error
+    Problem:
+      type: object
+      description: RFC 9457 problem details. Nest 전역 ExceptionFilter 하나가 만든다.
+      required: [type, title, status, code, requestId]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        requestId:
+          type: string
+          description: '`x-request-id` 헤더와 같은 값. 5xx 화면에 앞 8자를 보여준다.'
+        errors:
+          type: array
+          description: '`validation_failed`일 때만'
+          items:
+            type: object
+            required: [field, code]
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+
+    Health:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          const: ok
+        checks:
+          type: object
+          properties:
+            db:
+              type: string
+              const: ok
+
+    CreateRoomRequest:
+      type: object
+      required: [name, nickname, metOn]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: 방 이름 (화면 02a). 앞뒤 공백 제거 후 1~30자.
+          minLength: 1
+          maxLength: 30
+        nickname:
+          $ref: '#/components/schemas/Nickname'
+        metOn:
+          $ref: '#/components/schemas/MetOn'
+    CreateRoomResponse:
+      type: object
+      required: [roomId, participantId, token, inviteSecret, expiresAt, revision]
+      properties:
+        roomId:
+          $ref: '#/components/schemas/RoomId'
+        participantId:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: 참여자 토큰. 이 응답에서만 받을 수 있다.
+        inviteSecret:
+          $ref: '#/components/schemas/Secret'
+        expiresAt:
+          type: string
+          format: date-time
+          description: 만든 시각 + 30일
+        revision:
+          $ref: '#/components/schemas/Revision'
+
+    InvitePreview:
+      type: object
+      required: [roomId, name, inviterNickname, metOn, status, vacantSlot]
+      properties:
+        vacantSlot:
+          description: |
+            들어오면 받게 될 자리. 화면 04 "너는 주황 마름모로 표시돼" 문구와 아이콘을 정한다.
+            A가 나간 뒤 들어오면 A(파란 원)를 받는다. 꽉 찼으면 null.
+          oneOf:
+            - $ref: '#/components/schemas/Slot'
+            - type: 'null'
+        roomId:
+          $ref: '#/components/schemas/RoomId'
+        name:
+          type: string
+          description: 방 이름 (화면 04 큰 제목)
+        inviterNickname:
+          type: string
+          description: 방에 남아 있는 사람의 닉네임 ("서연이 너를 초대했어")
+        metOn:
+          $ref: '#/components/schemas/MetOn'
+        status:
+          type: string
+          enum: [open, full]
+    JoinRoomRequest:
+      type: object
+      required: [nickname, inviteSecret]
+      additionalProperties: false
+      properties:
+        nickname:
+          $ref: '#/components/schemas/Nickname'
+        inviteSecret:
+          $ref: '#/components/schemas/Secret'
+    JoinRoomResponse:
+      type: object
+      required: [roomId, participantId, token, slot, revision]
+      properties:
+        roomId:
+          $ref: '#/components/schemas/RoomId'
+        participantId:
+          type: string
+          format: uuid
+        token:
+          type: string
+        slot:
+          $ref: '#/components/schemas/Slot'
+        revision:
+          $ref: '#/components/schemas/Revision'
+
+    Participant:
+      type: object
+      required: [id, nickname, slot, photoCount, aiConsent]
+      properties:
+        id:
+          type: string
+          format: uuid
+        nickname:
+          type: string
+        slot:
+          $ref: '#/components/schemas/Slot'
+        photoCount:
+          type: integer
+          minimum: 0
+          description: 저장된 사진 수 (기록 탭의 "128장")
+        aiConsent:
+          type: boolean
+    ChatQuota:
+      type: object
+      description: |
+        이 방의 채팅 쿼터. 방마다 1시간 `CHAT_ROOM_HOURLY_LIMIT`(기본 30)회.
+        채팅 탭은 "이번 1시간 3/30"처럼 보여준다(Figma의 "오늘 3/20" 문구는 바꾼다). `resetAt`은 가장 오래된 예약이 1시간을 넘기는 시각.
+      required: [used, limit, resetAt]
+      properties:
+        used:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+        resetAt:
+          type: string
+          format: date-time
+    Room:
+      type: object
+      required: [roomId, name, metOn, expiresAt, revision, meId, participants, inviteSecret, chat, chatLastMessageId, photoLimit]
+      properties:
+        roomId:
+          $ref: '#/components/schemas/RoomId'
+        name:
+          type: string
+        metOn:
+          $ref: '#/components/schemas/MetOn'
+        expiresAt:
+          type: string
+          format: date-time
+          description: 방이 사라지는 시각 (화면 10 "이 방은 2024.04.01에 사라져")
+        revision:
+          $ref: '#/components/schemas/Revision'
+        meId:
+          type: string
+          format: uuid
+          description: 요청 토큰 주인의 참여자 id
+        participants:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/Participant'
+        inviteSecret:
+          description: 자리가 비어 있을 때만 값이 있다 (S2 "링크 다시 보내기"). 두 명이 다 있으면 null.
+          oneOf:
+            - $ref: '#/components/schemas/Secret'
+            - type: 'null'
+        chat:
+          $ref: '#/components/schemas/ChatQuota'
+        chatLastMessageId:
+          type: ['string', 'null']
+          format: uuid
+          description: |
+            이 방의 마지막 채팅 메시지 id. 기록이 없으면 null.
+            FE는 폴링 중 이 값이 바뀌면 `GET /rooms/{roomId}/chat/messages?after=`로 새 메시지만 받는다.
+        photoLimit:
+          type: integer
+          description: 참여자당 저장할 수 있는 사진 수 (`PHOTO_LIMIT_PER_PARTICIPANT`, 기본 2,000). FE가 고르기 전에 남은 수를 안내한다.
+    UpdateRoomRequest:
+      type: object
+      required: [metOn]
+      additionalProperties: false
+      properties:
+        metOn:
+          $ref: '#/components/schemas/MetOn'
+    UpdateRoomResponse:
+      type: object
+      required: [roomId, metOn, revision]
+      properties:
+        roomId:
+          $ref: '#/components/schemas/RoomId'
+        metOn:
+          $ref: '#/components/schemas/MetOn'
+        revision:
+          $ref: '#/components/schemas/Revision'
+    UpdateMeRequest:
+      type: object
+      required: [aiConsent]
+      additionalProperties: false
+      properties:
+        aiConsent:
+          type: boolean
+    UpdateMeResponse:
+      type: object
+      required: [participantId, aiConsent, revision]
+      properties:
+        participantId:
+          type: string
+          format: uuid
+        aiConsent:
+          type: boolean
+        revision:
+          $ref: '#/components/schemas/Revision'
+    LeaveRoomResponse:
+      type: object
+      required: [deletedPhotoCount, roomDeleted]
+      properties:
+        deletedPhotoCount:
+          type: integer
+        roomDeleted:
+          type: boolean
+          description: 마지막 사람이 나가서 방도 지워졌으면 true
+    RemovePartnerResponse:
+      type: object
+      required: [deletedPhotoCount, inviteSecret, revision]
+      properties:
+        deletedPhotoCount:
+          type: integer
+        inviteSecret:
+          $ref: '#/components/schemas/Secret'
+        revision:
+          $ref: '#/components/schemas/Revision'
+
+    PhotoMeta:
+      type: object
+      description: 브라우저가 exifr로 읽은 EXIF 원문. 시간 보정은 API가 이 원문으로 한다.
+      required: [clientIndex, dedupeKey, lat, lng, dateTimeOriginal]
+      additionalProperties: false
+      properties:
+        clientIndex:
+          type: integer
+          minimum: 0
+          description: 이 배치 안의 순번. 썸네일 파트 이름 `thumb_{clientIndex}`와 맞춘다.
+        dedupeKey:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: SHA-256(DateTimeOriginal|SubSecTimeOriginal|위도 5자리|경도 5자리|Make|Model)
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+          description: (0, 0)은 위치 없음으로 보고 FE가 보내지 않는다.
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+        dateTimeOriginal:
+          type: string
+          pattern: '^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$'
+          description: EXIF 원문. 실제 달력으로 검사하고 연도는 1990~올해+1만 받는다.
+          examples: ['2022:04:09 15:12:03']
+        subSecTimeOriginal:
+          type: string
+        offsetTimeOriginal:
+          type: string
+          pattern: '^[+-]\d{2}:\d{2}$'
+          examples: ['+09:00']
+        gpsDateStamp:
+          type: string
+          examples: ['2022:04:09']
+        gpsTimeStamp:
+          type: string
+          examples: ['06:12:03']
+        make:
+          type: string
+        model:
+          type: string
+    PhotoErrorCode:
+      type: string
+      enum:
+        - invalid_lat
+        - invalid_lng
+        - invalid_datetime
+        - invalid_dedupe_key
+        - thumb_too_large
+        - thumb_not_jpeg
+        - photo_limit_reached
+    UploadResult:
+      type: object
+      required: [clientIndex, dedupeKey, status]
+      properties:
+        clientIndex:
+          type: integer
+        dedupeKey:
+          type: string
+        status:
+          type: string
+          enum: [saved, duplicate, error]
+          description: '`duplicate`는 이미 저장된 사진이라 FE가 저장된 점으로 그린다.'
+        photoId:
+          type: string
+          format: uuid
+          description: '`saved`, `duplicate`일 때'
+        error:
+          type: object
+          required: [code]
+          properties:
+            code:
+              $ref: '#/components/schemas/PhotoErrorCode'
+            field:
+              type: string
+    UploadPhotosResponse:
+      type: object
+      required: [revision, results]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/UploadResult'
+    DeletePhotosResponse:
+      type: object
+      required: [deletedCount, revision]
+      properties:
+        deletedCount:
+          type: integer
+        revision:
+          $ref: '#/components/schemas/Revision'
+
+    Photo:
+      type: object
+      required: [id, participantId, dedupeKey, lat, lng, takenLocal, takenUtc, tzOffsetMin, timeSource, uncertain, placeLabel, thumbUrl, uploadedAt]
+      properties:
+        uploadedAt:
+          type: string
+          format: date-time
+          description: 서버에 저장된 시각. 화면 05(데스크톱) "최근 올린 사진"과 갱신 토스트 "도윤이 사진 N장을 올렸어"에 쓴다.
+        id:
+          type: string
+          format: uuid
+        participantId:
+          type: string
+          format: uuid
+        dedupeKey:
+          type: string
+          description: 업로드 중 흐린 점과 서버 사진을 `(participantId, dedupeKey)`로 맞출 때 쓴다.
+        lat:
+          type: number
+          description: 소수 4자리로 반올림된 값
+        lng:
+          type: number
+        takenLocal:
+          $ref: '#/components/schemas/LocalDateTime'
+        takenUtc:
+          type: string
+          format: date-time
+        tzOffsetMin:
+          type: integer
+          description: 현지 시각 − UTC (분). KST는 540.
+        timeSource:
+          type: string
+          enum: [offset, kr_bounds, gps, assumed_kst]
+          description: |
+            시간대를 정한 근거. `offset` EXIF OffsetTimeOriginal, `kr_bounds` 한국 좌표라 KST,
+            `gps` GPS 시각과의 차이, `assumed_kst` 근거 없이 KST로 가정.
+        uncertain:
+          type: boolean
+          description: 시각이 가정이거나 GPS와 5분 넘게 어긋남
+        placeLabel:
+          type: ['string', 'null']
+          description: 역지오코딩한 동네 이름. 실패하면 null, 해외면 "해외".
+        thumbUrl:
+          type: ['string', 'null']
+          description: '`/thumbs/{photoId}?exp=&sig=` 상대 경로. 썸네일이 없으면 null.'
+    MomentSide:
+      type: object
+      description: 스친 순간·1막 카드의 한쪽 사진 (폴라로이드 하나)
+      required: [participantId, photoId, takenLocal]
+      properties:
+        participantId:
+          type: string
+          format: uuid
+        photoId:
+          type: string
+          format: uuid
+        takenLocal:
+          $ref: '#/components/schemas/LocalDateTime'
+    Encounter:
+      type: object
+      description: 스친 순간 카드 (화면 07c). `a`는 슬롯 A, `b`는 슬롯 B의 사진이다.
+      required: [id, a, b, distanceM, gapMin, center, placeLabel, uncertain]
+      properties:
+        id:
+          type: string
+          pattern: '^E-[a-z0-9]{6}$'
+          description: 대표 사진 쌍으로 만든 안정적인 id. 채팅 근거 칩이 이 id로 카드를 연다.
+        a:
+          $ref: '#/components/schemas/MomentSide'
+        b:
+          $ref: '#/components/schemas/MomentSide'
+        distanceM:
+          type: integer
+          description: 두 사진 사이 거리 (m)
+        gapMin:
+          type: integer
+          description: 두 사진의 촬영 시각 차이 (분)
+        center:
+          $ref: '#/components/schemas/LatLng'
+        placeLabel:
+          type: ['string', 'null']
+        uncertain:
+          type: boolean
+    ClosestMoment:
+      type: object
+      description: 스친 순간이 0개일 때 보여줄 "가장 가까웠던 순간" (최대 3개, 스친 순간과 다른 모양으로 표시)
+      required: [id, a, b, distanceM, gapMin, placeLabel]
+      properties:
+        id:
+          type: string
+        a:
+          $ref: '#/components/schemas/MomentSide'
+        b:
+          $ref: '#/components/schemas/MomentSide'
+        distanceM:
+          type: integer
+        gapMin:
+          type: integer
+        placeLabel:
+          type: ['string', 'null']
+    LatLng:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+    HeatCell:
+      type: object
+      required: [cellId, lat, lng, days, weight, placeLabel]
+      properties:
+        cellId:
+          type: string
+          pattern: '^P-[a-z0-9]+$'
+        lat:
+          type: number
+          description: 칸 중심
+        lng:
+          type: number
+        days:
+          type: integer
+          description: 만난 후 둘 중 누구라도 이 칸에 사진을 남긴 서로 다른 날 수
+        weight:
+          type: number
+          minimum: 0.1
+          maximum: 1
+          description: 네이버 HeatMap용으로 정규화한 값
+        placeLabel:
+          type: ['string', 'null']
+    TopPlace:
+      type: object
+      required: [rank, cellId, placeLabel, days]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        cellId:
+          type: string
+        placeLabel:
+          type: ['string', 'null']
+        days:
+          type: integer
+    Act1Item:
+      type: object
+      description: 1막 "같은 곳, 다른 때" 카드 한 장
+      required: [cellId, placeLabel, a, b, sameDay, gapMin]
+      properties:
+        cellId:
+          type: string
+        placeLabel:
+          type: ['string', 'null']
+        a:
+          $ref: '#/components/schemas/MomentSide'
+        b:
+          $ref: '#/components/schemas/MomentSide'
+        sameDay:
+          type: boolean
+          description: 같은 날 엇갈렸으면 true ("같은 날, 3시간 차이")
+        gapMin:
+          type: integer
+    Story:
+      type: object
+      description: 리플레이 챕터 목록 (화면 07의 ①7곳 ②2번 ③2024.03.02부터)
+      required: [act1, act2, act3]
+      properties:
+        act1:
+          type: object
+          required: [total, items]
+          properties:
+            total:
+              type: integer
+              description: 조건에 맞는 칸 전체 수 (화면 "7곳")
+            items:
+              type: array
+              maxItems: 10
+              items:
+                $ref: '#/components/schemas/Act1Item'
+        act2:
+          type: object
+          required: [encounterIds]
+          properties:
+            encounterIds:
+              type: array
+              description: 시간순. 개수가 화면의 "2번"이다.
+              items:
+                type: string
+        act3:
+          type: object
+          required: [from, placeCount, dayCount]
+          properties:
+            from:
+              $ref: '#/components/schemas/MetOn'
+            placeCount:
+              type: integer
+            dayCount:
+              type: integer
+    RecordStats:
+      type: object
+      description: 기록 탭 요약 세 줄 (화면 05)
+      required: [oldest, newest, afterMetPlaceCount]
+      properties:
+        oldest:
+          oneOf:
+            - $ref: '#/components/schemas/PhotoBrief'
+            - type: 'null'
+        newest:
+          oneOf:
+            - $ref: '#/components/schemas/PhotoBrief'
+            - type: 'null'
+        afterMetPlaceCount:
+          type: integer
+          description: 만난 뒤 사진을 남긴 칸 수 (화면 "함께 간 장소 23곳")
+    PhotoBrief:
+      type: object
+      required: [takenLocal, placeLabel]
+      properties:
+        takenLocal:
+          $ref: '#/components/schemas/LocalDateTime'
+        placeLabel:
+          type: ['string', 'null']
+    Snapshot:
+      type: object
+      required: [revision, criteria, stats, photos, encounters, closest, heatmap, story]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        criteria:
+          type: object
+          description: 스친 순간 기준값. 카드의 기준 문구가 이 값을 읽는다.
+          required: [radiusM, windowMin, mergeGapMin]
+          properties:
+            radiusM:
+              type: integer
+            windowMin:
+              type: integer
+            mergeGapMin:
+              type: integer
+        stats:
+          $ref: '#/components/schemas/RecordStats'
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Photo'
+        encounters:
+          type: array
+          description: 스친 순간. 시간순.
+          items:
+            $ref: '#/components/schemas/Encounter'
+        closest:
+          type: array
+          maxItems: 3
+          description: 스친 순간이 0개일 때만 채운다 (S4)
+          items:
+            $ref: '#/components/schemas/ClosestMoment'
+        heatmap:
+          type: object
+          required: [cells, top]
+          properties:
+            cells:
+              type: array
+              items:
+                $ref: '#/components/schemas/HeatCell'
+            top:
+              type: array
+              maxItems: 10
+              description: 날 수가 많은 순. 화면 08은 앞 3개를 쓴다.
+              items:
+                $ref: '#/components/schemas/TopPlace'
+        story:
+          $ref: '#/components/schemas/Story'
+
+    ChatMessage:
+      type: object
+      description: 방에 저장된 채팅 메시지 하나
+      required: [id, role, authorId, content, evidenceIds, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant]
+        authorId:
+          type: ['string', 'null']
+          format: uuid
+          description: 질문한 참여자 id. `assistant`면 null. FE는 `meId`와 비교해 "나 / 상대" 말풍선을 고른다.
+        content:
+          type: string
+          description: '`user`는 1~1,000자. `assistant`는 `streaming`·`failed`일 때 비어 있을 수 있다.'
+        evidenceIds:
+          type: array
+          description: 근거 칩으로 바꿔도 되는 id (`E-…`, `P-…`). `user`면 빈 배열.
+          items:
+            type: string
+        status:
+          type: string
+          enum: [streaming, complete, truncated, failed]
+          description: |
+            `streaming` 답하는 중 / `complete` 끝 / `truncated` 길이 제한으로 잘림("답변이 길어서 잘렸어") /
+            `failed` 제공자 오류로 중단("답을 못 가져왔어" + 다시 묻기). `user`는 항상 `complete`.
+        createdAt:
+          type: string
+          format: date-time
+    ChatHistory:
+      type: object
+      required: [messages, hasMore]
+      properties:
+        messages:
+          type: array
+          description: 오래된 순
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        hasMore:
+          type: boolean
+          description: '`before` 방향(또는 파라미터 없음)이면 더 오래된 메시지가 있는지, `after` 방향이면 더 새 메시지가 있는지'
+    ChatRequest:
+      type: object
+      required: [content]
+      additionalProperties: false
+      description: 질문 하나만 보낸다. 모델 선택 필드와 지난 대화 필드는 없다(서버가 정하고 서버가 꺼낸다).
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: 앞뒤 공백을 지운 뒤 길이를 잰다.
+    ChatFrame:
+      description: NDJSON 스트림의 한 줄
+      oneOf:
+        - type: object
+          title: meta
+          required: [type, revision, userMessageId, assistantMessageId, evidenceIds, quota]
+          properties:
+            type:
+              const: meta
+            revision:
+              $ref: '#/components/schemas/Revision'
+            userMessageId:
+              type: string
+              format: uuid
+            assistantMessageId:
+              type: string
+              format: uuid
+            evidenceIds:
+              type: array
+              description: 답변 속 근거 칩으로 바꿔도 되는 id (`E-…` 스친 순간, `P-…` 장소)
+              items:
+                type: string
+            quota:
+              $ref: '#/components/schemas/ChatQuota'
+        - type: object
+          title: text
+          required: [type, delta]
+          properties:
+            type:
+              const: text
+            delta:
+              type: string
+        - type: object
+          title: done
+          required: [type, finishReason]
+          properties:
+            type:
+              const: done
+            finishReason:
+              type: string
+              enum: [stop, length]
+              description: '`length`면 FE가 "답변이 길어서 잘렸어"를 붙인다.'
+        - type: object
+          title: error
+          required: [type, code, requestId]
+          properties:
+            type:
+              const: error
+            code:
+              $ref: '#/components/schemas/ErrorCode'
+            requestId:
+              type: string
