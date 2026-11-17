@@ -50,7 +50,6 @@ ajv.addSchema(CONTRACT_SCHEMA);
 
 const compiled = new WeakMap<object, ValidateFunction>();
 
-/** One compiled validator per schema object; the schemas come from the generated contract. */
 export function validatorFor(schema: JsonSchema): ValidateFunction {
   if (typeof schema === 'boolean') return ajv.compile(schema);
   let fn = compiled.get(schema);
@@ -89,7 +88,6 @@ export function issuesOf(errors: readonly ErrorObject[]): FieldIssue[] {
   return [...seen.values()];
 }
 
-/** Validates a JSON request body against the operation's YAML schema. */
 export function parseJsonBody<Op extends OperationId>(
   op: Op,
   body: unknown,

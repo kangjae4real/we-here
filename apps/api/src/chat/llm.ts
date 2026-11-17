@@ -17,7 +17,6 @@ export class LlmError extends Error {
   constructor(
     readonly code: LlmErrorCode,
     detail?: string,
-    /** Seconds the provider asked us to wait, for `upstream_rate_limited`. */
     readonly retryAfterS?: number,
   ) {
     super(detail ?? code);
@@ -66,7 +65,6 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** Scripted by `LLM_FAKE_SCENARIO`; `LLM_FAKE_DELAY_MS` delays every event. */
 function fakeLlm({ fake }: LlmSettings): LlmProvider {
   return {
     async *stream(req, signal) {
@@ -101,7 +99,6 @@ function fakeLlm({ fake }: LlmSettings): LlmProvider {
   };
 }
 
-/** `data:` payloads of a server-sent event stream, decoded across chunk boundaries. */
 export async function* sseData(
   body: AsyncIterable<Uint8Array>,
 ): AsyncGenerator<string> {
@@ -124,7 +121,6 @@ interface CompletionChunk {
   choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[];
 }
 
-/** OpenAI's chat completions stream, which NVIDIA, OpenAI and many others serve. */
 function openAiCompatible(s: LlmSettings): LlmProvider {
   return {
     async *stream(req, signal) {
@@ -182,7 +178,6 @@ function openAiCompatible(s: LlmSettings): LlmProvider {
   };
 }
 
-/** `LLM_PROVIDER` picks one. Another provider is one more entry here. */
 export const LLM_ADAPTERS = {
   fake: fakeLlm,
   'openai-compatible': openAiCompatible,
@@ -191,13 +186,10 @@ export const LLM_ADAPTERS = {
 export type LlmProviderName = keyof typeof LLM_ADAPTERS;
 
 export interface Deadlines {
-  /** From the request to the first event. */
   firstMs: number;
-  /** Between two events. */
   idleMs: number;
 }
 
-/** On a missed deadline: aborts the provider and throws `upstream_timeout`. */
 export async function* withDeadlines(
   source: AsyncIterable<LlmEvent>,
   ctl: AbortController,

@@ -40,11 +40,6 @@ function naverGeocoder(keys: GeocoderKeys): ReverseGeocoder {
   };
 }
 
-/**
- * `GEOCODER` picks one. `none` (the default) names nothing, so a server
- * without keys never shows made-up names. `fake` gives a deterministic name
- * per cache key for local runs and tests.
- */
 export const GEOCODERS = {
   none: () => ({ reverse: async () => null }),
   fake: () => ({ reverse: async (p: LatLng) => `가상동 ${labelKey(p)}` }),

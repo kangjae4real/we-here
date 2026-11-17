@@ -18,7 +18,6 @@ export interface CallRequest {
   token?: string;
   headers?: Record<string, string>;
   json?: unknown;
-  /** Raw body for malformed input and multipart. */
   body?: string | FormData;
 }
 
@@ -31,18 +30,13 @@ export interface CallResult {
 export interface OpenStream {
   status: number;
   headers: Headers;
-  /** NDJSON frames as they arrive, each checked against the YAML. */
   frames: AsyncGenerator<any>;
-  /** Drops the connection, like a closed browser tab. */
   disconnect(): void;
 }
 
 export interface Api {
-  /** Calls one contract operation and fails the test unless the response matches the YAML exactly. */
   call(op: OperationId, req?: CallRequest): Promise<CallResult>;
-  /** Like `call` for a 200 NDJSON answer, but reads it frame by frame. Other statuses are read whole and checked. */
   open(op: OperationId, req?: CallRequest): Promise<OpenStream | CallResult>;
-  /** Off-contract request (unknown routes); only the global headers are checked. */
   raw(method: string, path: string, init?: RequestInit): Promise<CallResult>;
   sql<R = any>(text: string, params?: unknown[]): Promise<R[]>;
   readonly baseUrl: string;

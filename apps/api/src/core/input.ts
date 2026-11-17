@@ -19,7 +19,6 @@ export interface FieldIssue {
   code: FieldIssueCode;
 }
 
-/** Rejected input. The HTTP shell turns it into 400 `validation_failed` with `errors`. */
 export class InvalidInput extends Error {
   constructor(readonly issues: readonly FieldIssue[]) {
     super(issues.map((i) => `${i.field}:${i.code}`).join(', '));
@@ -28,14 +27,8 @@ export class InvalidInput extends Error {
 
 export const MET_ON_MIN = '1990-01-01';
 
-// C0, DEL and C1 control characters.
 const CONTROL = /\p{Cc}/u;
 
-/**
- * The rules a JSON schema cannot say. Ajv has already checked type and the raw
- * maxLength, and trimming never lengthens, so only emptiness and control
- * characters remain.
- */
 export function cleanText(
   raw: string,
   field: string,
@@ -47,7 +40,6 @@ export function cleanText(
   return value;
 }
 
-/** Ajv's `format: date` has already checked the calendar; this adds 1990-01-01..today in KST. */
 export function checkMetOn(
   raw: string,
   nowMs: number,

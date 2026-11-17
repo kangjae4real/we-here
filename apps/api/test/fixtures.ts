@@ -50,7 +50,6 @@ export const jpeg = (size: number, fill = 1) => {
   return bytes;
 };
 
-/** An uploadPhotos multipart body. */
 export function form(
   items: unknown,
   thumbs: Record<number, Uint8Array<ArrayBuffer>> = {},
@@ -72,7 +71,6 @@ export function form(
 export interface Shot {
   lat: number;
   lng: number;
-  /** EXIF `YYYY:MM:DD HH:mm:ss` */
   at: string;
   offset?: string;
   thumb?: boolean;
@@ -80,7 +78,6 @@ export interface Shot {
 
 let shotSerial = 1000;
 
-/** Uploads photos for one seat and returns their ids in order. */
 export async function uploadShots(
   api: Api,
   room: { roomId: string },

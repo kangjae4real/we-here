@@ -27,23 +27,16 @@ export interface Member {
   aiConsent: boolean;
 }
 
-/** A room opened by someone who is not a member yet (invite preview, join). */
 export interface GuestScope {
   q: Sql;
   room: RoomRow;
-  /** Ordered by slot. */
   members: Member[];
 }
 
-/** A room opened with a valid participant token. */
 export interface MemberScope extends GuestScope {
   me: Member;
 }
 
-/**
- * What a write did. RoomAccess applies it, so the revision rises by exactly 1
- * per changing write and a body can never return a stale revision.
- */
 export type Outcome<T> =
   | { kind: 'unchanged'; value: T }
   | { kind: 'bump'; build: (revision: number) => T }
@@ -67,16 +60,10 @@ type Credential = string | undefined | typeof GUEST;
 
 type Opened<T> = { ok: true; value: T } | { ok: false; code: ErrorCode };
 
-/**
- * The only way into a room. The order is fixed: room exists, then not
- * expired, then token. Writes lock the room row first, so a room's writers
- * run one at a time and no other lock is ever taken before it.
- */
 @Injectable()
 export class RoomAccess {
   constructor(private readonly db: Db) {}
 
-  /** REPEATABLE READ, no locks. */
   read<T>(
     roomId: string,
     token: string | undefined,
@@ -110,7 +97,6 @@ export class RoomAccess {
     );
   }
 
-  /** A token credential yields a MemberScope; GUEST yields a GuestScope. */
   private async open<T>(
     isolation: Isolation,
     rawRoomId: string,
@@ -186,7 +172,6 @@ async function apply<T>({ q, room }: GuestScope, o: Outcome<T>): Promise<T> {
   }
 }
 
-/** Idempotent: the conditional delete makes a second purge a no-op. */
 async function purgeExpired(q: Sql, roomId: RoomId): Promise<void> {
   const deleted = await q.exec(
     'DELETE FROM rooms WHERE id = $1 AND expires_at <= now()',

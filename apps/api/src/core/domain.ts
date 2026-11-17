@@ -1,13 +1,10 @@
 type Brand<T, B extends string> = T & { readonly __brand: B };
 
-/** 128-bit random, base64url, 22 chars. */
 export type RoomId = Brand<string, 'RoomId'>;
 export type ParticipantId = Brand<string, 'ParticipantId'>;
 export type PhotoId = Brand<string, 'PhotoId'>;
 export type MessageId = Brand<string, 'MessageId'>;
-/** `YYYY-MM-DD` calendar date with no zone. */
 export type LocalDate = Brand<string, 'LocalDate'>;
-/** `YYYY-MM-DDTHH:mm:ss` wall-clock time with no zone. */
 export type LocalDateTime = Brand<string, 'LocalDateTime'>;
 export type Slot = 'A' | 'B';
 
@@ -26,7 +23,6 @@ export function asUuid<T extends ParticipantId | PhotoId | MessageId>(
   return UUID.test(id) ? (id as T) : null;
 }
 
-/** The seat a newcomer takes: A first, so a room whose creator left hands out A again. */
 export function vacantSlot(taken: readonly { slot: Slot }[]): Slot | null {
   if (!taken.some((m) => m.slot === 'A')) return 'A';
   if (!taken.some((m) => m.slot === 'B')) return 'B';

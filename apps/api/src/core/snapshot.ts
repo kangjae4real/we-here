@@ -15,7 +15,6 @@ import type {
 import { inKorea, type LatLng, labelKey } from './geo.js';
 import type { TimeSource } from './time.js';
 
-/** One stored photo as the snapshot reads it. */
 export interface RoomPhoto {
   id: PhotoId;
   participantId: ParticipantId;
@@ -31,7 +30,6 @@ export interface RoomPhoto {
   hasThumb: boolean;
 }
 
-/** Place names we have, by `labelKey`. A missing key is a name we could not get. */
 export type Labels = ReadonlyMap<string, string>;
 
 export const ABROAD = '해외';
@@ -72,7 +70,6 @@ export interface SnapshotParts {
   photos: readonly RoomPhoto[];
   analysis: Analysis;
   labels: Labels;
-  /** Signed relative URL for a photo that has a thumbnail. */
   thumbUrl: (photoId: PhotoId) => string;
 }
 

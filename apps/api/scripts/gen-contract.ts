@@ -78,7 +78,6 @@ function requestBodyOf(op: JsonObject): Json {
   return { contentType, schema: (media as JsonObject).schema };
 }
 
-/** Resolves response and parameter refs in place and points schema refs at `schemaBase`. Drops annotations. */
 function inline(
   doc: JsonObject,
   node: Json,

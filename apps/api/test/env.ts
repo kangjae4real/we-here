@@ -2,7 +2,6 @@ export const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
   'postgres://postgres:postgres@127.0.0.1:5432/wehere_test';
 
-/** Every spec shares 127.0.0.1, so per-IP limits are lifted unless a spec lowers them. */
 export const THUMB_SECRET = 'test-thumb-secret-0123456789abcdef';
 
 export const TEST_ENV: Record<string, string> = {

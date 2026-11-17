@@ -2,13 +2,10 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { OPERATIONS, type OperationId } from '../src/contract/index.js';
 
-/** One `operationId status` line per harness call. A file survives vitest's per-file worker isolation. */
 export const LEDGER = fileURLToPath(new URL('.ledger', import.meta.url));
 
-/** Teardown fails when a documented (operation, status) pair went unexercised. */
 export const REQUIRE_FULL_COVERAGE = true;
 
-/** Documented pairs no test can reach on purpose. */
 export const EXEMPT: ReadonlySet<string> = new Set<`${OperationId} ${string}`>(
   [],
 );

@@ -15,7 +15,6 @@ export const MAX_BATCH_BYTES = 2 * 1024 * 1024;
 const FRAMING_BYTES = 64 * 1024;
 const THUMB_PART = /^thumb_(0|[1-9]\d{0,5})$/;
 
-/** A meta field that fails the schema becomes that photo's error, or rejects the batch when no photo code fits. */
 const PHOTO_FIELD_CODE = {
   clientIndex: 'batch',
   dedupeKey: 'invalid_dedupe_key',
@@ -52,7 +51,6 @@ const tooLarge = () => new ApiError('batch_too_large');
 const invalid = (field: string, code: FieldIssue['code']) =>
   new InvalidInput([{ field, code }]);
 
-/** Parses the multipart body and judges each photo on its own. Runs before the room lock. */
 export async function readUpload(
   req: Request,
   res: Response,

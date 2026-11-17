@@ -229,11 +229,6 @@ export class RoomsService {
   }
 }
 
-/**
- * Frees a seat: the participant's photos, the participant, and the room's
- * chat history (answers may quote the leaver's photos). Chat reservations
- * stay, so leaving does not refill the hourly quota.
- */
 async function vacate({ q, room }: MemberScope, id: ParticipantId) {
   const deletedPhotoCount = await q.exec(
     'DELETE FROM photos WHERE participant_id = $1',
@@ -244,7 +239,6 @@ async function vacate({ q, room }: MemberScope, id: ParticipantId) {
   return deletedPhotoCount;
 }
 
-/** A freed seat gets a new invite secret, so links sent before stop working. */
 async function rotateInvite({ q, room }: MemberScope): Promise<string> {
   const secret = newInviteSecret();
   await q.exec('UPDATE rooms SET invite_secret = $2 WHERE id = $1', [
@@ -254,7 +248,6 @@ async function rotateInvite({ q, room }: MemberScope): Promise<string> {
   return secret;
 }
 
-/** Reservations in the last hour; resets when the oldest one turns an hour old. */
 export async function readRoomQuota(
   q: Sql,
   roomId: string,

@@ -3,7 +3,6 @@ export interface LatLng {
   lng: number;
 }
 
-/** `P-` + geohash precision 7, about 153 m (N-S) by 122 m (E-W) at 37°N. */
 export type CellId = `P-${string}`;
 
 const EARTH_RADIUS_M = 6_371_008.8;
@@ -22,18 +21,15 @@ export function haversineM(p: LatLng, q: LatLng): number {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-/** Takes the short way around, so two points straddling the date line meet near ±180, not at 0. */
 export function midpoint(p: LatLng, q: LatLng): LatLng {
   const dLng = ((q.lng - p.lng + 540) % 360) - 180;
   return { lat: (p.lat + q.lat) / 2, lng: ((p.lng + dLng / 2 + 540) % 360) - 180 };
 }
 
-/** E11's box. Inside it a photo is on KST; outside it a place is "해외" and never geocoded. */
 export function inKorea(p: LatLng): boolean {
   return p.lat >= 33 && p.lat <= 39 && p.lng >= 124 && p.lng <= 132;
 }
 
-/** The geocode cache key: 3 decimals, about 100 m. */
 export function labelKey(p: LatLng): string {
   return `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`;
 }
@@ -50,7 +46,6 @@ export function cellCenter(id: CellId): LatLng {
   return { lat: ((y + 0.5) / LAT_CELLS) * 180 - 90, lng: ((x + 0.5) / LNG_CELLS) * 360 - 180 };
 }
 
-/** The cell and its eight neighbours (E13). Longitude wraps at the date line; latitude stops at the poles. */
 export function neighborCells(id: CellId): CellId[] {
   const { x, y } = decode(id);
   const cells: CellId[] = [];

@@ -4,12 +4,10 @@ import { ApiError } from './problem.js';
 const HOUR_MS = 3_600_000;
 const SWEEP_AT = 10_000;
 
-/** Sliding one-hour log of hit times per (bucket, ip), in memory on this instance. */
 @Injectable()
 export class RateLimiter {
   private readonly hits = new Map<string, number[]>();
 
-  /** Records a hit, or throws 429 `rate_limited` with Retry-After when the window is full. */
   take(bucket: string, ip: string, limit: number, nowMs = Date.now()): void {
     const key = `${bucket} ${ip}`;
     const since = nowMs - HOUR_MS;

@@ -16,7 +16,6 @@ export type ClosestId = `C-${string}`;
 export interface PhotoFact extends LatLng {
   id: string;
   slot: Slot;
-  /** `YYYY-MM-DDTHH:mm:ss` in the photo's own time zone. Its date decides before or after meeting. */
   takenLocal: string;
   takenUtcMs: number;
   uncertain: boolean;
@@ -25,11 +24,9 @@ export interface PhotoFact extends LatLng {
 
 export interface AnalysisInput {
   photos: readonly PhotoFact[];
-  /** `YYYY-MM-DD` */
   metOn: string;
 }
 
-/** `a` is always the slot A photo and `b` the slot B photo. */
 export interface PhotoPair {
   a: PhotoFact;
   b: PhotoFact;
@@ -62,17 +59,12 @@ export interface HeatCell {
 }
 
 export interface Analysis {
-  /** Chronological. Story act 2 lists these ids in this order. */
   encounters: Encounter[];
-  /** At most 3, best score first. Empty whenever `encounters` is not. */
   closest: ClosestMoment[];
   act1: { total: number; items: Act1Item[] };
-  /** `cells` by days descending, then cell id. `top` is the first 10 of them, rank = index + 1. */
   heatmap: { cells: HeatCell[]; top: HeatCell[] };
-  /** `placeCount` is also the record tab's `afterMetPlaceCount`. */
   act3: { placeCount: number; dayCount: number };
   stats: { oldest: PhotoFact | null; newest: PhotoFact | null };
-  /** Points whose place name is on screen, so the shell geocodes them live. Duplicates are possible. */
   labelPoints: LatLng[];
 }
 
@@ -136,8 +128,6 @@ function encounterCandidates(A: readonly PhotoFact[], B: readonly PhotoFact[]): 
   return found;
 }
 
-/** E14: a candidate joins the latest moment when it is at most 30 min after that moment's latest candidate
- *  and within 500 m of its first one. The anchor keeps a walk across town from chaining into one moment. */
 function groupEncounters(candidates: Measured[]): Encounter[] {
   const groups: { anchor: LatLng; lastMs: number; best: Measured }[] = [];
   for (const c of candidates.sort((x, y) => earlierMs(x) - earlierMs(y) || x.m - y.m)) {
@@ -158,8 +148,6 @@ function groupEncounters(candidates: Measured[]): Encounter[] {
   }));
 }
 
-/** G1. Picks never repeat a photo or a scene already picked (both sides within 30 min of it),
- *  so a burst of shots shows up as one card instead of three. */
 function closestMoments(A: readonly PhotoFact[], B: readonly PhotoFact[]): ClosestMoment[] {
   const picks: Measured[] = [];
   while (picks.length < CLOSEST_MAX) {
@@ -188,8 +176,6 @@ function sameScene(pick: Measured, a: PhotoFact, b: PhotoFact): boolean {
   );
 }
 
-/** E13: A and B photos within 150 m, searched over the 3×3 cells around A, keyed by the cell of their
- *  midpoint. Cells where any encounter candidate sits are encounters, not act 1. */
 function act1Cards(
   A: readonly PhotoFact[],
   B: readonly PhotoFact[],
@@ -233,7 +219,6 @@ function act1Cards(
   return { total: best.size, items };
 }
 
-/** O20: a day counts for a cell when either participant left a photo there that day. */
 function afterMeeting(after: readonly PhotoFact[]): Pick<Analysis, 'heatmap' | 'act3'> {
   const daysByCell = new Map<CellId, Set<string>>();
   const allDays = new Set<string>();
@@ -260,8 +245,6 @@ function afterMeeting(after: readonly PhotoFact[]): Pick<Analysis, 'heatmap' | '
   };
 }
 
-/** Every (A, B) pair taken within `windowMs` of each other, minus shared copies of one photo (E1).
- *  Both lists are sorted by time. */
 function* pairsWithin(
   A: readonly PhotoFact[],
   B: readonly PhotoFact[],
@@ -287,7 +270,6 @@ function firstAtOrAfter(sorted: readonly PhotoFact[], ms: number): number {
   return lo;
 }
 
-/** `E-` or `C-` + base36(SHA-1(smaller id + ":" + larger id)), first 6 characters. */
 function pairId<P extends 'E-' | 'C-'>(prefix: P, { a, b }: Measured): `${P}${string}` {
   const [lo, hi] = a.id < b.id ? [a.id, b.id] : [b.id, a.id];
   const hex = createHash('sha1').update(`${lo}:${hi}`).digest('hex');

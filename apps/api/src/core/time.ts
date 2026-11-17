@@ -9,16 +9,13 @@ const DAY_MIN = 1440;
 
 export type TimeSource = 'offset' | 'kr_bounds' | 'gps' | 'assumed_kst';
 
-/** A photo's wall-clock time and the zone the server settled on (E11). */
 export interface CorrectedTime {
   takenLocal: LocalDateTime;
-  /** Local time minus UTC, in minutes. */
   tzOffsetMin: number;
   timeSource: TimeSource;
   uncertain: boolean;
 }
 
-/** The raw EXIF strings and position the correction reads. */
 export interface ExifClock {
   dateTimeOriginal: string;
   offsetTimeOriginal?: string;
@@ -32,26 +29,18 @@ export type TimeResult =
   | { ok: true; time: CorrectedTime }
   | { ok: false; field: 'dateTimeOriginal' | 'offsetTimeOriginal' };
 
-/** Today's calendar date in Korea. */
 export function kstDate(nowMs: number): LocalDate {
   return new Date(nowMs + KST_OFFSET_MIN * MINUTE)
     .toISOString()
     .slice(0, 10) as LocalDate;
 }
 
-/** The instant the KST calendar day after `nowMs` starts. */
 export function nextKstMidnightMs(nowMs: number): number {
   const day = 86_400_000;
   const offset = KST_OFFSET_MIN * MINUTE;
   return Math.floor((nowMs + offset) / day) * day + day - offset;
 }
 
-/**
- * E11 and E12. The zone comes from, in order: OffsetTimeOriginal, the Korea
- * box, the gap to the GPS clock (UTC) rounded to 15 minutes, and finally an
- * assumed KST. The local time itself must be a real calendar instant in
- * 1990..(this UTC year + 1).
- */
 export function correctTime(m: ExifClock, nowMs: number): TimeResult {
   const local = parseExifDateTime(m.dateTimeOriginal);
   const maxYear = new Date(nowMs).getUTCFullYear() + 1;
@@ -84,7 +73,6 @@ export function correctTime(m: ExifClock, nowMs: number): TimeResult {
   return at(KST_OFFSET_MIN, 'assumed_kst', true);
 }
 
-/** A GPS stamp from the wrong day still names the zone: move the gap by whole days into [-720, 840]. */
 function wrapIntoOffsetRange(gapMin: number): number {
   if (gapMin > OFFSET_MAX) {
     return gapMin - Math.ceil((gapMin - OFFSET_MAX) / DAY_MIN) * DAY_MIN;
@@ -98,7 +86,6 @@ function wrapIntoOffsetRange(gapMin: number): number {
 interface CivilTime {
   year: number;
   text: string;
-  /** The wall clock read as if it were UTC. */
   asUtcMs: number;
 }
 
@@ -125,7 +112,6 @@ function parseOffset(raw: string): number | null {
   return valid ? offset : null;
 }
 
-/** Unparseable GPS fields are not an error; the correction just skips that step. */
 function parseGpsUtc(date?: string, time?: string): number | null {
   const d = date && /^(\d{4}):(\d{2}):(\d{2})$/.exec(date);
   const t = time && /^(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?$/.exec(time);
@@ -135,7 +121,6 @@ function parseGpsUtc(date?: string, time?: string): number | null {
   return civilMs(y, mo, day, h, mi, s);
 }
 
-/** Null unless every field names a real calendar instant. */
 function civilMs(
   y: number,
   mo: number,

@@ -41,12 +41,10 @@ export const PROBLEMS = {
 } as const satisfies Record<ErrorCode, { status: number; title: string }>;
 
 export interface ProblemOptions {
-  /** Overrides the code's usual status (health uses 503, unknown routes 404). */
   status?: number;
   detail?: string;
   errors?: readonly FieldIssue[];
   headers?: Record<string, string>;
-  /** Extra top-level members the contract adds to this problem, e.g. `resetAt` or `checks`. */
   members?: Record<string, unknown>;
 }
 
@@ -59,7 +57,6 @@ export class ApiError extends Error {
   }
 }
 
-/** Maps anything thrown while serving a request to the problem it becomes. Unknown errors become 500. */
 export function toApiError(e: unknown): ApiError {
   if (e instanceof ApiError) return e;
   if (e instanceof InvalidInput) {
@@ -115,7 +112,6 @@ export function sendProblem(res: Response, error: ApiError): void {
     );
 }
 
-/** The only error writer. Once a stream has started, it can only end the response. */
 @Catch()
 export class ProblemFilter implements ExceptionFilter {
   private readonly logger = new Logger('Problem');

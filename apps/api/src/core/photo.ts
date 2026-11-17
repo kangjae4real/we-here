@@ -8,14 +8,12 @@ export type UploadResult = W<'UploadResult'>;
 
 export const THUMB_MAX_BYTES = 40_960;
 
-/** Everything the server keeps about one photo. Coordinates round to 4 decimals in the column. */
 export interface PhotoFact extends CorrectedTime {
   dedupeKey: string;
   lat: number;
   lng: number;
 }
 
-/** One meta item judged on its own, before the room lock. */
 export type ItemVerdict =
   | {
       clientIndex: number;
@@ -31,7 +29,6 @@ export type ItemVerdict =
       error: { code: PhotoErrorCode; field?: string };
     };
 
-/** A participant's already stored photo with this dedupeKey. */
 export interface StoredPhoto {
   id: PhotoId;
   thumbBytes: number | null;
@@ -43,13 +40,11 @@ export interface NewPhoto extends PhotoFact {
 }
 
 export interface UploadPlan {
-  /** Request order. */
   results: UploadResult[];
   inserts: NewPhoto[];
   thumbFills: { id: PhotoId; thumb: Uint8Array }[];
 }
 
-/** Checks a schema-valid item: Null Island, the E11/E12 time rules, and the thumbnail bytes. */
 export function judgeItem(
   meta: PhotoMeta,
   thumb: Uint8Array | undefined,
@@ -83,16 +78,6 @@ function isJpeg(bytes: Uint8Array): boolean {
   return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
 }
 
-/**
- * Decides every item of one batch. Runs under the room lock, so `stored` and
- * `storedCount` cannot change underneath it.
- *
- * - A key already stored is a duplicate. Its thumbnail is filled when the
- *   stored one is missing or smaller (largest offered wins).
- * - A key repeated within the batch shares the first occurrence's outcome.
- * - New keys are saved in request order until the participant's limit, then
- *   get photo_limit_reached.
- */
 export function planUpload(i: {
   verdicts: readonly ItemVerdict[];
   stored: ReadonlyMap<string, StoredPhoto>;

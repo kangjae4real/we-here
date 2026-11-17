@@ -4,7 +4,6 @@ import pg from 'pg';
 export interface Sql {
   rows<R>(text: string, params?: readonly unknown[]): Promise<R[]>;
   one<R>(text: string, params?: readonly unknown[]): Promise<R | undefined>;
-  /** Returns the affected row count. */
   exec(text: string, params?: readonly unknown[]): Promise<number>;
 }
 
@@ -49,7 +48,6 @@ function sqlOf(client: pg.Pool | pg.PoolClient): Sql {
 
 export class Db implements OnModuleDestroy {
   private readonly pool: pg.Pool;
-  /** Autocommit queries outside any transaction. */
   readonly q: Sql;
 
   constructor(url: string) {

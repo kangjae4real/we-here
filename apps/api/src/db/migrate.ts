@@ -2,14 +2,12 @@ import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
-/** Same relative depth from src/db and dist/db. */
 export const MIGRATIONS_DIR = fileURLToPath(
   new URL('../../migrations/', import.meta.url),
 );
 
-const LOCK_KEY = 0x7765686572; // "wehere"; serializes concurrent boots.
+const LOCK_KEY = 0x7765686572;
 
-/** Applies every not-yet-applied `NNNN_*.sql` in order, each in its own transaction. Returns the applied names. */
 export async function migrate(
   databaseUrl: string,
   dir = MIGRATIONS_DIR,

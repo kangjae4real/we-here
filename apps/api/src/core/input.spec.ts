@@ -24,7 +24,6 @@ describe('cleanText', () => {
 });
 
 describe('checkMetOn', () => {
-  // 2024-03-02T15:00Z is 2024-03-03 00:00 in KST.
   const kstMidnight = Date.parse('2024-03-02T15:00:00Z');
   const issuesFor = (raw: string, nowMs: number) => {
     const issues: FieldIssue[] = [];

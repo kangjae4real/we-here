@@ -5,37 +5,28 @@ import { type Labels, placeOf, type RoomPhoto } from './snapshot.js';
 
 export type MessageStatus = 'streaming' | 'complete' | 'truncated' | 'failed';
 
-/** One earlier message the model sees. Only `complete` and `truncated` ones qualify. */
 export interface HistoryTurn {
   role: 'user' | 'assistant';
   content: string;
 }
 
-/**
- * What the model may know about a room. It carries names, dates, distances
- * and evidence ids, never coordinates, thumbnails or device data.
- */
 export interface ChatSummary {
   people: string[];
   metOn: LocalDate;
   photos: { count: number; from: string | null; to: string | null };
-  /** Closest first. */
   encounters: {
     id: string;
     place: string | null;
-    /** Local time to the minute, `YYYY-MM-DD HH:mm`. */
     at: string;
     distanceM: number;
     gapMin: number;
     uncertain: boolean;
   }[];
-  /** Most days first. */
   places: { id: string; place: string | null; days: number }[];
 }
 
 export interface Prompt {
   system: string;
-  /** Earlier turns, oldest first, then the question. */
   messages: HistoryTurn[];
 }
 
@@ -46,7 +37,6 @@ const HISTORY_TURNS = 10;
 const HISTORY_CHARS = 6000;
 const CONTROL_EXCEPT_LINE_BREAKS = /[^\P{Cc}\n\r\t]/u;
 
-/** Trims; a question may span lines but carries no other control characters. */
 export function cleanQuestion(raw: string): string {
   const value = raw.trim();
   const issues: FieldIssue[] = [];
@@ -102,7 +92,6 @@ export function evidenceIdsOf(s: ChatSummary): string[] {
   return [...s.encounters.map((e) => e.id), ...s.places.map((p) => p.id)];
 }
 
-/** The latest turns that fit both limits, oldest first. Takes them newest first. */
 export function fitHistory(newestFirst: readonly HistoryTurn[]): HistoryTurn[] {
   const kept: HistoryTurn[] = [];
   let chars = 0;
@@ -132,7 +121,6 @@ export function buildPrompt(
   };
 }
 
-/** Ids the answer cites that the summary offered, in order of first mention. */
 export function citedEvidence(
   answer: string,
   allowed: readonly string[],
@@ -154,7 +142,6 @@ export interface HistoryQuery {
 const LIMIT_DEFAULT = 50;
 const LIMIT_MAX = 100;
 
-/** Query strings for listChatMessages. Express hands repeated keys over as arrays, which are rejected. */
 export function parseHistoryQuery(raw: Record<string, unknown>): HistoryQuery {
   const issues: FieldIssue[] = [];
   const id = (field: 'before' | 'after'): MessageId | null => {

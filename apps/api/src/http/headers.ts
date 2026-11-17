@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 
-/** Runs before routing so unknown routes and parser failures carry the same headers. */
 export function baseHeaders(_req: Request, res: Response, next: NextFunction) {
   const requestId = randomUUID();
   res.locals.requestId = requestId;

@@ -62,7 +62,6 @@ export class SnapshotService {
     });
   }
 
-  /** Runs after the read transaction closes, so no transaction waits on the geocoder. */
   async analyze(
     photos: readonly RoomPhoto[],
     metOn: LocalDate,

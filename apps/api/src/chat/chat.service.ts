@@ -25,7 +25,6 @@ import { LLM_ADAPTERS, LlmError, type LlmEvent, type LlmProvider, withDeadlines 
 
 type ChatFrame = W<'ChatFrame'>;
 
-/** Where frames go once the answer has started. Writes after the client left are dropped. */
 export interface FrameSink {
   start(): void;
   write(frame: ChatFrame): void;
@@ -33,7 +32,6 @@ export interface FrameSink {
   readonly requestId: string;
 }
 
-/** What the reservation transaction hands to generation. */
 interface Turn {
   revision: number;
   userMessageId: MessageId;
@@ -46,7 +44,6 @@ interface Turn {
 }
 
 const MAX_TOKENS = 800;
-/** How often streamed text is saved; each save also proves the generation is alive. */
 const SAVE_EVERY_MS = 500;
 
 interface MessageRow {
@@ -59,7 +56,6 @@ interface MessageRow {
   createdAt: Date;
 }
 
-/** A crashed server leaves `streaming` rows behind; after 2 min without a save they count as failed. */
 function failStale(q: Sql, roomId: string): Promise<number> {
   return q.exec(
     `UPDATE chat_messages SET status = 'failed'
@@ -147,12 +143,6 @@ export class ChatService {
     });
   }
 
-  /**
-   * Throws (as problem+json) until the provider's first event arrives, so a
-   * failure before any text gets its own HTTP status. After that the answer
-   * is a 200 stream, and generation outlives the client: the provider gets
-   * its own AbortController, never the request's.
-   */
   async ask(
     roomId: string,
     token: string | undefined,
@@ -197,11 +187,6 @@ export class ChatService {
     await this.pump(turn.assistantMessageId, first, events, ctl, sink, evidence);
   }
 
-  /**
-   * One locked transaction: consent, busy, quotas, then both messages. Busy
-   * comes before the quotas so a 409 costs nothing; the global counter is
-   * touched last so its row, shared by every room, is held briefly.
-   */
   private reserve(
     roomId: string,
     token: string | undefined,
@@ -274,7 +259,6 @@ export class ChatService {
     });
   }
 
-  /** Streams the rest of the answer. Never throws: the response is already a 200. */
   private async pump(
     id: MessageId,
     first: string,
@@ -301,7 +285,6 @@ export class ChatService {
         sink.write({ type: 'text', delta: event.delta });
         if (Date.now() - savedAt >= SAVE_EVERY_MS) {
           savedAt = Date.now();
-          // 0 rows: a leave or kick wiped the history, so the answer has nowhere to go.
           if (!(await this.save(id, content))) {
             ctl.abort();
             return;
@@ -324,7 +307,6 @@ export class ChatService {
     }
   }
 
-  /** Writes only while the row is still `streaming`; returns whether it was. */
   private save(
     id: MessageId,
     content: string,

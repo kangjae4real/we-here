@@ -35,12 +35,6 @@ export interface LabelBudget {
 
 export const LABEL_BUDGET: LabelBudget = { concurrency: 4, totalMs: 3000 };
 
-/**
- * Names places for one snapshot. `live` points are looked up when the cache
- * misses them, at most `concurrency` at a time and all within `totalMs`;
- * `cachedOnly` points are only read from the cache. Names found are cached.
- * Failures and nulls are not, so the next snapshot tries again.
- */
 export class PlaceLabeler {
   constructor(
     private readonly geocoder: ReverseGeocoder,
@@ -63,7 +57,6 @@ export class PlaceLabeler {
     }
     const found = await this.lookUp([...misses]);
     if (found.size) {
-      // A cache write failing costs only a repeat lookup next time, so the snapshot still answers.
       await this.cache.write(found).catch(() => {});
     }
     return new Map([...cached, ...found]);
@@ -88,9 +81,7 @@ export class PlaceLabeler {
         try {
           const name = await this.geocoder.reverse(p, ctl.signal);
           if (name && !ctl.signal.aborted) found.set(key, name);
-        } catch {
-          // A failed lookup leaves the name null for this snapshot only.
-        }
+        } catch {}
       }
     };
     const workers = Array.from(

@@ -12,7 +12,6 @@ import {
   type GeocoderName,
 } from './snapshot/geocoders.js';
 
-/** A missing LLM leaves the rest of the API up; chat answers 503 `server_misconfigured` with the reason. */
 export type LlmConfig =
   | { ok: true; provider: LlmProviderName; settings: LlmSettings }
   | { ok: false; reason: string };
@@ -20,14 +19,11 @@ export type LlmConfig =
 export interface Config {
   port: number;
   databaseUrl: string;
-  /** Per IP per hour, for createRoom and, as its own bucket, joinRoom. */
   roomCreateLimitPerHour: number;
   invitePreviewLimitPerHour: number;
   photoLimitPerParticipant: number;
   chatRoomHourlyLimit: number;
-  /** Service-wide answers per KST day. */
   chatDailyLimit: number;
-  /** HMAC key for /thumbs URLs; rotating it invalidates every issued URL. */
   thumbSigningSecret: string;
   geocoder: GeocoderName;
   geocoderKeys: GeocoderKeys;
@@ -40,7 +36,6 @@ export const CONFIG = Symbol('Config');
 export type ConfigResult =
   { ok: true; config: Config } | { ok: false; problems: string[] };
 
-/** Parsed once at boot; main.ts exits naming every bad variable. */
 export function readConfig(
   env: Record<string, string | undefined>,
 ): ConfigResult {

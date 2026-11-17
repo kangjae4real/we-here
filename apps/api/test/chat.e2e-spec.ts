@@ -22,7 +22,6 @@ async function withApi<T>(env: Record<string, string>, fn: (api: Api) => Promise
   }
 }
 
-/** Both seats taken and both consenting, with one encounter to cite. */
 async function chatRoom(on = api): Promise<PairedRoom> {
   const room = await pairedRoom(on);
   for (const seat of [room.a, room.b]) {

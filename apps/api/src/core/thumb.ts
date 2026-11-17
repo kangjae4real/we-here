@@ -3,11 +3,6 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 const HOUR_S = 3600;
 const MAX_TTL_S = 24 * HOUR_S;
 
-/**
- * The expiry to sign: rounded up to the hour so the URL, and the browser's
- * cached image, stay the same for an hour. At most 24 h away and never past
- * the room's own expiry.
- */
 export function thumbExp(nowMs: number, roomExpiresAtMs: number): number {
   const hourly =
     Math.ceil((nowMs / 1000 + MAX_TTL_S - HOUR_S) / HOUR_S) * HOUR_S;
@@ -22,7 +17,6 @@ export function signThumb(
   return createHmac('sha256', secret).update(`${photoId}.${exp}`).digest('hex');
 }
 
-/** Relative path the snapshot hands out; the web app prefixes /api/v1. */
 export function thumbPath(
   secret: string,
   photoId: string,
@@ -34,7 +28,6 @@ export function thumbPath(
 export type ThumbCheck =
   'ok' | 'thumb_signature_invalid' | 'thumb_signature_expired';
 
-/** Signature first, then expiry. An exp further out than we ever sign is invalid, not merely unexpired. */
 export function verifyThumb(
   secret: string,
   photoId: string,

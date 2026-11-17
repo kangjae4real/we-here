@@ -94,7 +94,6 @@ export class RoomsController {
     return this.rooms.updateRoom(roomId, token, metOn);
   }
 
-  // Declared before ':participantId' so "me" is never read as an id.
   @Patch(':roomId/participants/me')
   updateMe(
     @Param('roomId') roomId: string,
@@ -105,6 +104,7 @@ export class RoomsController {
     return this.rooms.updateMe(roomId, token, b.aiConsent);
   }
 
+  // Declared before ':participantId' so "me" is never read as an id.
   @Delete(':roomId/participants/me')
   leaveRoom(
     @Param('roomId') roomId: string,
