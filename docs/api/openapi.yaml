@@ -393,7 +393,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: 방이 없거나, 그 참여자가 이 방에 없다
+          description: 방이 없거나(`room_not_found`, `room_expired`), 그 참여자가 이 방에 없다(`participant_not_found`, FE는 토큰을 지우지 않는다)
           content:
             application/problem+json:
               schema:
@@ -1028,6 +1028,7 @@ components:
         - thumb_signature_invalid
         - thumb_signature_expired
         - photo_not_found
+        - participant_not_found
         - validation_failed
         - batch_too_large
         - room_chat_quota_exceeded
@@ -1240,6 +1241,8 @@ components:
           description: |
             이 방의 마지막 채팅 메시지 id. 기록이 없으면 null.
             FE는 폴링 중 이 값이 바뀌면 `GET /rooms/{roomId}/chat/messages?after=`로 새 메시지만 받는다.
+            답이 끝나도 이 값은 그대로다. 그래서 FE는 `after`에 `streaming`이 아닌 마지막 메시지 id를 넣고,
+            받은 목록에 `streaming`이 남아 있는 동안은 이 값과 상관없이 메시지를 계속 폴링한다.
         photoLimit:
           type: integer
           description: 참여자당 저장할 수 있는 사진 수 (`PHOTO_LIMIT_PER_PARTICIPANT`, 기본 2,000). FE가 고르기 전에 남은 수를 안내한다.
