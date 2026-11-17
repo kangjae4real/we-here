@@ -15,6 +15,8 @@
 - **Node.js 24 이상** (루트 `package.json`의 `engines.node`)
 - **pnpm 11.25.0** (루트 `package.json`의 `packageManager`)
 
+`pnpm-workspace.yaml`에 `engineStrict: true`가 있어서 Node 24 미만에서는 `pnpm install`이 실패합니다. 버전 관리자(fnm, nvm, mise 등)는 루트의 `.node-version`을 읽어 Node 24를 고릅니다.
+
 Node 24에 포함된 corepack을 켜두면, 저장소 안에서 `pnpm`을 실행할 때 `packageManager`에 적힌 버전이 자동으로 사용됩니다.
 
 ```bash
@@ -40,11 +42,29 @@ pnpm dev
 | 서비스 | 주소 |
 |---|---|
 | web (Next.js) | http://localhost:3000 |
+| api (NestJS) | http://localhost:4000 |
 | Storybook | http://localhost:6006 |
 
-Turborepo의 터미널 UI에서 두 서버의 로그가 각각 따로 표시됩니다. `Ctrl+C`를 누르면 둘 다 종료됩니다. Storybook은 시작할 때 브라우저 탭을 자동으로 엽니다.
+Turborepo의 터미널 UI에서 세 서버의 로그가 각각 따로 표시됩니다. `Ctrl+C`를 누르면 모두 종료됩니다. Storybook은 시작할 때 브라우저 탭을 자동으로 엽니다.
 
-`pnpm dev`는 API를 띄우지 않습니다. API는 DB와 함께 Docker로 실행할 예정이라 의도적으로 뺐습니다. 지금 API만 따로 실행하는 방법은 [api](#api) 섹션을 참고하세요.
+Postgres가 필요하면 `docker compose up -d db`로 띄웁니다. 접속 주소는 `postgres://postgres:postgres@localhost:5432/wehere`입니다.
+
+## Docker 환경
+
+`Dockerfile`과 `compose.yaml`로 web과 api를 프로덕션 이미지로 빌드해서 Postgres와 함께 실행합니다. 클라우드 인스턴스에도 같은 파일을 그대로 사용합니다. Docker가 필요합니다.
+
+### 프로덕션 이미지로 실행
+
+```bash
+docker compose --profile app up -d --build
+curl http://localhost:4000/   # Hello World!
+open http://localhost:3000
+docker compose --profile app down
+```
+
+`--profile app` 없이 `docker compose up -d`만 실행하면 Postgres만 뜹니다. 네이버 지도 키는 빌드할 때 이미지에 들어가므로 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID=... docker compose --profile app up -d --build`처럼 빌드 명령에 넘깁니다.
+
+처음 빌드할 때는 의존성을 모두 내려받느라 몇 분 걸립니다. 이후에는 BuildKit 캐시를 재사용해서 `pnpm-lock.yaml`이 바뀌지 않으면 의존성 설치를 건너뜁니다.
 
 ## 디렉토리 구조
 
@@ -101,7 +121,7 @@ allowBuilds:
 | `build` | 의존 패키지를 먼저 빌드(`^build`), `.env*` 변경도 캐시 키에 포함, 결과물 `.next/**` 캐시 | web, api |
 | `lint` | 의존 패키지의 lint를 먼저 실행(`^lint`) | web(Biome), api(oxlint) |
 | `check-types` | 의존 패키지를 먼저 실행(`^check-types`) | 현재 없음 (스크립트를 정의한 앱이 없음) |
-| `dev` | 캐시 안 함, 계속 실행되는 작업(`persistent`) | web |
+| `dev` | 캐시 안 함, 계속 실행되는 작업(`persistent`) | web, api |
 | `storybook` | 캐시 안 함, 계속 실행되는 작업(`persistent`) | web |
 
 `"ui": "tui"` 설정 때문에 여러 작업을 동시에 실행하면 작업별로 로그 창이 나뉜 터미널 UI가 뜹니다. 로그를 한 줄로 이어서 보고 싶으면 `--ui=stream`을 붙입니다.
@@ -124,7 +144,7 @@ pnpm --filter api test
 
 | 명령 | 내용 |
 |---|---|
-| `pnpm dev` | `turbo run dev storybook`: web 개발 서버와 Storybook을 함께 실행 |
+| `pnpm dev` | `turbo run dev storybook`: web, api 개발 서버와 Storybook을 함께 실행 |
 | `pnpm build` | `turbo run build`: web, api 빌드 |
 | `pnpm lint` | `turbo run lint`: web(Biome), api(oxlint) 검사 |
 | `pnpm check-types` | `turbo run check-types`: 현재는 실행되는 작업이 없음 |
@@ -145,6 +165,7 @@ pnpm --filter api test
 
 | 명령 | 내용 |
 |---|---|
+| `dev` | `nest start --watch` (포트 4000) |
 | `start` / `start:dev` / `start:debug` | 실행 / 파일 변경 감지(watch) / 디버그 + watch |
 | `build` | `nest build` (결과물은 `dist/`) |
 | `start:prod` | `node dist/main` (`build` 이후) |
@@ -210,10 +231,10 @@ import { AppModule } from './app.module.js';
 
 ### 실행
 
-API는 `PORT` 환경변수가 없으면 **3000번 포트**를 쓰는데, web과 같은 포트라서 함께 띄우면 충돌합니다. 로컬에서 직접 실행할 때는 포트를 지정하세요.
+API는 `PORT` 환경변수가 없으면 **4000번 포트**를 씁니다. 루트 `pnpm dev`가 api의 `dev`(`nest start --watch`)도 함께 실행합니다. API만 띄우려면:
 
 ```bash
-PORT=4000 pnpm --filter api start:dev
+pnpm --filter api dev
 curl http://localhost:4000/   # Hello World!
 ```
 
@@ -233,6 +254,7 @@ Vitest의 `globals`가 켜져 있어서 `describe`, `it`, `expect`를 import 없
 
 ## 브랜치와 커밋
 
+- PR과 `develop`/`main` push마다 GitHub Actions(`.github/workflows/ci.yml`)가 Node 24에서 `pnpm lint`, api 단위·e2e 테스트, `docker compose --profile app build`를 실행합니다.
 - 작업 브랜치는 `develop`에서 만들고, PR도 `develop`으로 올립니다.
 - 커밋 메시지는 `chore: ...`, `docs: ...` 같은 Conventional Commits 형식을 따릅니다.
 
