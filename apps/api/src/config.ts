@@ -29,6 +29,7 @@ export interface Config {
   geocoderKeys: GeocoderKeys;
   llm: LlmConfig;
   llmDeadlines: Deadlines;
+  apiDocs: boolean;
 }
 
 export const CONFIG = Symbol('Config');
@@ -125,6 +126,12 @@ export function readConfig(
       firstMs: int('LLM_FIRST_TOKEN_TIMEOUT_MS', 30_000, 1),
       idleMs: int('LLM_IDLE_TIMEOUT_MS', 15_000, 1),
     },
+    apiDocs:
+      oneOf(
+        'API_DOCS',
+        { on: true, off: false },
+        env.NODE_ENV === 'production' ? 'off' : 'on',
+      ) === 'on',
   };
   return problems.length ? { ok: false, problems } : { ok: true, config };
 }

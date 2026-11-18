@@ -171,7 +171,7 @@ pnpm --filter api test
 | `start:prod` | `node dist/main` (`build` 이후) |
 | `test` / `test:watch` / `test:cov` | 단위 테스트 (Vitest) / watch / 커버리지 |
 | `test:e2e` | e2e 테스트 (`test/*.e2e-spec.ts`) |
-| `contract:emit` | 코드(컨트롤러 데코레이터, `src/contract/components.ts`)로 만든 OpenAPI 문서를 `docs/api/openapi.yaml`과 `src/contract/*.gen.ts`에 쓴다. |
+| `contract:emit` | 코드(컨트롤러 데코레이터, `src/contract/components.ts`)로 만든 OpenAPI 문서를 `docs/api/openapi.yaml`과 `src/contract/*.gen.ts`에 쓴다. 서버는 같은 문서를 `/docs`(Swagger UI)와 `/docs/openapi.json`으로 보여 준다(`API_DOCS`) |
 | `lint` | `oxlint src/ test/` |
 | `format` | Prettier (`src`, `test`) |
 

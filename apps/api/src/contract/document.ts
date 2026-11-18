@@ -96,6 +96,13 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   return tidy(SwaggerModule.createDocument(app, documentConfig()));
 }
 
+export function serveApiDocs(app: INestApplication): void {
+  SwaggerModule.setup('docs', app, () => buildOpenApiDocument(app), {
+    jsonDocumentUrl: 'docs/openapi.json',
+    yamlDocumentUrl: 'docs/openapi.yaml',
+  });
+}
+
 type Json = { [key: string]: any };
 
 const OPERATION_KEYS = [

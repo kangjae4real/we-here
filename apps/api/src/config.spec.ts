@@ -94,6 +94,23 @@ describe('readConfig', () => {
     });
   });
 
+  it('serves API docs unless production turns them off by default', () => {
+    expect(readConfig(VALID)).toMatchObject({ config: { apiDocs: true } });
+    expect(readConfig({ ...VALID, NODE_ENV: 'production' })).toMatchObject({
+      config: { apiDocs: false },
+    });
+    expect(
+      readConfig({ ...VALID, NODE_ENV: 'production', API_DOCS: 'on' }),
+    ).toMatchObject({ config: { apiDocs: true } });
+    expect(readConfig({ ...VALID, API_DOCS: 'off' })).toMatchObject({
+      config: { apiDocs: false },
+    });
+    expect(readConfig({ ...VALID, API_DOCS: 'yes' })).toEqual({
+      ok: false,
+      problems: ['API_DOCS must be one of on, off'],
+    });
+  });
+
   it('reads only variables that .env.example documents, and all of them', () => {
     const read = new Set<string>();
     for (const branch of [
