@@ -20,11 +20,101 @@ open http://localhost:4000/docs          # Swagger UI
 
 서버는 시작할 때 `apps/api/.env`를 읽고, 마이그레이션(`migrations/*.sql`)을 자동으로 적용합니다. `.env.example`의 값 그대로면 외부 키 없이 모든 API가 동작합니다. AI 채팅과 장소 이름은 가짜 값을 돌려줍니다.
 
-Swagger UI에서 호출하는 순서는 다음과 같습니다.
+API를 직접 호출해 보려면 [Swagger로 API 써 보기](#swagger로-api-써-보기)와 [curl로 처음부터 끝까지 써 보기](#curl로-처음부터-끝까지-써-보기)를 보세요.
 
-1. `POST /rooms`로 방을 만듭니다.
-2. 응답의 `token`을 복사합니다.
-3. 오른쪽 위 **Authorize**에 붙여 넣습니다.
+## Swagger로 API 써 보기
+
+서버를 띄운 뒤 http://localhost:4000/docs 를 엽니다.
+
+| 주소 | 내용 |
+|---|---|
+| `/docs` | Swagger UI |
+| `/docs/openapi.json` | OpenAPI 3.1 문서 (JSON) |
+| `/docs/openapi.yaml` | 같은 문서 (YAML) |
+
+`API_DOCS=off`이거나 `NODE_ENV=production`이면 세 주소 모두 404입니다. Docker 이미지(`docker compose --profile app`)는 `NODE_ENV=production`이라 기본으로 꺼져 있습니다.
+
+### 화면 읽는 법
+
+- API는 태그로 묶여 있습니다. `system`, `rooms`, `photos`, `analysis`, `chat` 순서이고, 각 태그 설명에 해당하는 화면 번호가 있습니다.
+- 각 API를 펼치면 설명, 파라미터, 요청 본문, 상태 코드별 응답이 나옵니다. 오류 응답의 설명에 어떤 `code`가 오는지 적혀 있습니다. FE는 `status`가 아니라 `code`로 화면을 나눕니다.
+- 요청·응답의 **Schema** 탭이나 맨 아래 **Schemas** 섹션에서 필드별 설명, 형식, 예시 값을 볼 수 있습니다.
+- 위쪽 **Servers**는 `http://localhost:4000`(API 직접 호출)으로 둡니다. `http://localhost:3000/api/v1`은 web이 함께 떠 있을 때만 쓸 수 있습니다.
+
+### 인증 넣기
+
+방 만들기, 초대 미리보기, 참여, 썸네일, `/health`를 뺀 모든 API에는 `X-Participant-Token` 헤더가 필요합니다.
+
+1. `POST /rooms` → **Try it out** → **Execute**로 방을 만듭니다. 예시 본문을 그대로 보내도 됩니다.
+2. 응답에서 `roomId`, `token`, `inviteSecret`을 복사해 둡니다. `token`은 이 응답에서만 받을 수 있습니다.
+3. 오른쪽 위 **Authorize**를 누르고 `ParticipantToken`에 `token`을 붙여 넣습니다.
+4. 이제 `roomId`를 넣으면 다른 API를 부를 수 있습니다. 토큰은 브라우저에 저장되어 새로고침해도 남아 있습니다.
+
+### 두 사람으로 테스트하기
+
+방에는 두 사람이 있고, 스친 순간과 AI 채팅은 두 사람이 모두 있어야 나옵니다. Swagger에서는 토큰을 바꿔 끼우면서 두 사람 역할을 합니다.
+
+1. A(방을 만든 사람)의 토큰으로 Authorize 합니다.
+2. `GET /rooms/{roomId}/invite`에 `roomId`와 `X-Invite-Secret`(`inviteSecret` 값)을 넣어 초대 미리보기를 확인합니다.
+3. `POST /rooms/{roomId}/participants`에 `nickname`과 `inviteSecret`을 보내 B로 참여합니다. 응답의 `token`이 B의 토큰입니다.
+4. B로 요청하려면 **Authorize** → **Logout** → B의 토큰을 붙여 넣습니다. 두 토큰은 메모장에 따로 적어 두세요.
+
+### Swagger에서 하기 어려운 것
+
+- **사진 업로드(`POST /rooms/{roomId}/photos`)**: multipart 요청입니다. `meta` JSON 배열과 `thumb_{clientIndex}` 파일 파트를 함께 보내야 하는데, Swagger UI에는 `thumb_*` 파일 입력칸이 나오지 않습니다. 아래 curl 예시로 올리세요.
+- **AI 채팅(`POST /rooms/{roomId}/chat`)**: 응답이 NDJSON 스트림입니다. Swagger UI는 스트림이 끝난 뒤 전체를 한 번에 보여 줍니다. 한 줄씩 오는 모습을 보려면 `curl -N`을 씁니다.
+- **썸네일(`GET /thumbs/{photoId}`)**: 스냅샷의 `thumbUrl`에 서명(`exp`, `sig`)이 들어 있습니다. 브라우저 주소창에 `http://localhost:4000` + `thumbUrl`을 붙여 여는 편이 쉽습니다.
+
+## curl로 처음부터 끝까지 써 보기
+
+방 만들기부터 채팅까지 한 번에 확인하는 순서입니다. `jq`가 필요합니다(`brew install jq`). `.env.example` 값(가짜 AI, 가짜 장소 이름)으로 띄운 서버 기준입니다.
+
+```bash
+B=http://localhost:4000
+
+# 1. A가 방을 만든다
+R=$(curl -s -X POST $B/rooms -H 'content-type: application/json' \
+  -d '{"name":"테스트 방","nickname":"서연","metOn":"2024-03-02"}')
+RID=$(echo "$R" | jq -r .roomId); TA=$(echo "$R" | jq -r .token); SEC=$(echo "$R" | jq -r .inviteSecret)
+
+# 2. 초대 미리보기와 B 참여
+curl -s $B/rooms/$RID/invite -H "X-Invite-Secret: $SEC"
+TB=$(curl -s -X POST $B/rooms/$RID/participants -H 'content-type: application/json' \
+  -d "{\"nickname\":\"도윤\",\"inviteSecret\":\"$SEC\"}" | jq -r .token)
+
+# 3. 만나기 전(2022-04-09) 같은 곳에서 4분 차이로 찍은 사진을 한 장씩 올린다
+#    dedupeKey는 64자리 16진수면 된다. 썸네일은 선택(40KB 이하 JPEG).
+curl -s -X POST $B/rooms/$RID/photos -H "X-Participant-Token: $TA" \
+  -F "meta=[{\"clientIndex\":0,\"dedupeKey\":\"$(printf '1%.0s' {1..64})\",\"lat\":37.5446,\"lng\":127.0559,\"dateTimeOriginal\":\"2022:04:09 15:12:03\"}];type=application/json" \
+  -F "thumb_0=@./thumb.jpg;type=image/jpeg"     # 썸네일이 없으면 이 줄을 뺀다
+curl -s -X POST $B/rooms/$RID/photos -H "X-Participant-Token: $TB" \
+  -F "meta=[{\"clientIndex\":0,\"dedupeKey\":\"$(printf '2%.0s' {1..64})\",\"lat\":37.5450,\"lng\":127.0562,\"dateTimeOriginal\":\"2022:04:09 15:15:40\"}];type=application/json"
+
+# 4. 스냅샷: encounters에 스친 순간이 하나 생긴다
+curl -s $B/rooms/$RID/snapshot -H "X-Participant-Token: $TA" | jq '.encounters'
+
+# 5. 두 사람 모두 AI 동의 후 채팅 (한 줄씩 스트리밍)
+for T in $TA $TB; do
+  curl -s -X PATCH $B/rooms/$RID/participants/me -H "X-Participant-Token: $T" \
+    -H 'content-type: application/json' -d '{"aiConsent":true}'; echo
+done
+curl -s -N -X POST $B/rooms/$RID/chat -H "X-Participant-Token: $TA" \
+  -H 'content-type: application/json' -d '{"content":"우리 언제 스쳤어?"}'
+
+# 6. B도 같은 대화 기록을 본다
+curl -s $B/rooms/$RID/chat/messages -H "X-Participant-Token: $TB" | jq '.messages[].content'
+```
+
+썸네일용 JPEG가 없으면 macOS에서 `sips -s format jpeg -Z 320 원본.png --out thumb.jpg`로 만들 수 있습니다.
+
+## 로컬 개발 팁
+
+- **`.env`를 바꾸면 서버를 다시 시작**해야 합니다. watch 모드는 소스 파일만 보고 `.env`는 시작할 때 한 번 읽습니다.
+- **AI 오류 화면 확인**: `LLM_FAKE_SCENARIO`를 `length`(잘림), `mid_error`(중간 실패), `rate_limited`(429), `error`(502) 등으로 바꾸면 실제 모델 없이 오류 상황을 만들 수 있습니다. 스트리밍을 눈으로 보려면 `LLM_FAKE_DELAY_MS=300` 정도로 둡니다.
+- **429 `rate_limited`가 나면**: 방 만들기·참여는 IP당 1시간 10번이 기본입니다. 테스트 중에는 `.env`에서 `ROOM_CREATE_LIMIT_PER_HOUR`를 크게 올립니다. 이 한도는 메모리에만 있어서 서버를 다시 시작해도 풀립니다.
+- **DB 직접 보기**: `docker compose exec db psql -U postgres -d wehere`
+- **로컬 데이터 전부 지우기**: `docker compose down -v`로 DB 볼륨까지 지운 뒤 `docker compose up -d db`. 서버를 다시 띄우면 마이그레이션이 다시 적용됩니다.
+- **요청 추적**: 모든 응답의 `x-request-id` 헤더와 오류 본문의 `requestId`가 같은 값입니다. 500 `internal_error`는 서버 로그에 `requestId=...`와 스택이 남으니 이 값으로 찾습니다.
 
 ## 스크립트
 

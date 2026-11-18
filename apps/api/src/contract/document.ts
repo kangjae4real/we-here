@@ -100,6 +100,7 @@ export function serveApiDocs(app: INestApplication): void {
   SwaggerModule.setup('docs', app, () => buildOpenApiDocument(app), {
     jsonDocumentUrl: 'docs/openapi.json',
     yamlDocumentUrl: 'docs/openapi.yaml',
+    swaggerOptions: { persistAuthorization: true },
   });
 }
 
