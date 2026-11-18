@@ -1,14 +1,12 @@
 import { fileURLToPath } from 'node:url';
 import openapiTS, { astToString } from 'openapi-typescript';
 import { format, resolveConfig } from 'prettier';
-import { stringify } from 'yaml';
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type JsonObject = { [key: string]: Json };
 
 const API_ROOT = new URL('../', import.meta.url);
 export const OUTPUTS = {
-  yaml: fileURLToPath(new URL('../../docs/api/openapi.yaml', API_ROOT)),
   types: fileURLToPath(new URL('src/contract/types.gen.ts', API_ROOT)),
   openapi: fileURLToPath(new URL('src/contract/openapi.gen.ts', API_ROOT)),
 };
@@ -20,11 +18,10 @@ const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 
 export async function generate(
   document: object,
-): Promise<{ yaml: string; types: string; openapi: string }> {
+): Promise<{ types: string; openapi: string }> {
   const doc = structuredClone(document) as JsonObject;
   const types = `// ${NOTICE}\n` + astToString(await openapiTS(doc as never));
   return {
-    yaml: `# ${NOTICE}\n${stringify(doc, { lineWidth: 0, version: '1.1' })}`,
     types: await pretty(types, OUTPUTS.types),
     openapi: await pretty(emitOpenapi(doc), OUTPUTS.openapi),
   };

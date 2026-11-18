@@ -38,7 +38,7 @@ Swagger UI에서 호출하는 순서는 다음과 같습니다.
 | `start:prod` | `node dist/main` (`build` 이후) |
 | `test` / `test:watch` / `test:cov` | 단위 테스트 (Vitest) / watch / 커버리지 |
 | `test:e2e` | e2e 테스트 (`test/*.e2e-spec.ts`) |
-| `contract:emit` | 코드로 만든 OpenAPI 문서를 `docs/api/openapi.yaml`과 `src/contract/*.gen.ts`에 씁니다 ([API 문서](#api-문서)) |
+| `contract:emit` | 코드로 만든 OpenAPI 문서에서 `src/contract/*.gen.ts`(타입, 검증 스키마)를 다시 만듭니다 ([API 문서](#api-문서)) |
 | `lint` | `oxlint src/ test/ scripts/` |
 | `format` | Prettier (`src`, `test`) |
 
@@ -123,7 +123,8 @@ LLM_MODEL=...
 API 문서(OpenAPI 3.1)는 코드에서 만듭니다. 원본은 컨트롤러의 Swagger 데코레이터, `src/contract/components.ts`(스키마), `src/contract/document.ts`(공통 설명)입니다.
 
 - 서버를 띄우면 `/docs`(Swagger UI), `/docs/openapi.json`, `/docs/openapi.yaml`에서 볼 수 있습니다 (`API_DOCS`).
-- 스키마나 데코레이터를 바꾼 뒤에는 `pnpm --filter api contract:emit`을 실행해 `docs/api/openapi.yaml`, `src/contract/types.gen.ts`, `src/contract/openapi.gen.ts`를 다시 만들고 함께 커밋합니다. 커밋된 파일이 코드와 다르면 단위 테스트가 실패합니다.
+- 문서 파일은 저장소에 따로 두지 않습니다. 파일이 필요하면 서버를 띄우고 `/docs/openapi.json`이나 `/docs/openapi.yaml`을 받습니다.
+- 스키마나 데코레이터를 바꾼 뒤에는 `pnpm --filter api contract:emit`을 실행해 `src/contract/types.gen.ts`, `src/contract/openapi.gen.ts`를 다시 만들고 함께 커밋합니다. 커밋된 파일이 코드와 다르면 단위 테스트가 실패합니다.
 - 요청 본문 검증(Ajv)과 TS 타입도 같은 스키마에서 나옵니다. DTO 클래스는 따로 두지 않습니다.
 
 ## 코드 스타일

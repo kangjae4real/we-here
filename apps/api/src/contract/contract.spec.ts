@@ -19,7 +19,6 @@ describe('emitted contract', () => {
     });
     const out = await generate(buildOpenApiDocument(app));
     await app.close();
-    await expect(out.yaml).toMatchFileSnapshot(OUTPUTS.yaml);
     await expect(out.types).toMatchFileSnapshot(OUTPUTS.types);
     await expect(out.openapi).toMatchFileSnapshot(OUTPUTS.openapi);
   });
