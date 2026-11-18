@@ -1,5 +1,7 @@
 import type { AddressInfo } from 'node:net';
+import { isDeepStrictEqual } from 'node:util';
 import pg from 'pg';
+import { contractOf } from '../scripts/gen-contract.js';
 import { createApp } from '../src/app.js';
 import { readConfig } from '../src/config.js';
 import {
@@ -9,6 +11,7 @@ import {
   type OperationSpec,
   validatorFor,
 } from '../src/contract/index.js';
+import { CONTRACT_SCHEMA } from '../src/contract/openapi.gen.js';
 import { TEST_DATABASE_URL, TEST_ENV } from './env.js';
 import { record } from './ledger.js';
 
@@ -54,6 +57,7 @@ export async function startApi(
   await app.listen(0, '127.0.0.1');
   const { port } = app.getHttpServer().address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${port}`;
+  if (parsed.config.apiDocs) await checkServedContract(baseUrl);
   const pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 
   function request(op: OperationId, req: CallRequest, signal?: AbortSignal) {
@@ -146,6 +150,17 @@ export async function startApi(
       await pool.end();
     },
   };
+}
+
+/** The contract these tests validate against is the one the running server builds from its controllers. */
+async function checkServedContract(baseUrl: string): Promise<void> {
+  const served = await (await fetch(`${baseUrl}/docs/openapi.json`)).json();
+  const expected = { schema: CONTRACT_SCHEMA, operations: OPERATIONS };
+  if (!isDeepStrictEqual(contractOf(served), expected)) {
+    throw new Error(
+      'GET /docs/openapi.json differs from src/contract/openapi.gen.ts; run `pnpm --filter api contract:emit`',
+    );
+  }
 }
 
 function mediaOf(headers: Headers): string {
