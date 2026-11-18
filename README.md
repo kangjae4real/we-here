@@ -47,7 +47,7 @@ pnpm dev
 
 Turborepo의 터미널 UI에서 세 서버의 로그가 각각 따로 표시됩니다. `Ctrl+C`를 누르면 모두 종료됩니다. Storybook은 시작할 때 브라우저 탭을 자동으로 엽니다.
 
-Postgres가 필요하면 `docker compose up -d db`로 띄웁니다. 접속 주소는 `postgres://postgres:postgres@localhost:5432/wehere`입니다.
+api는 Postgres와 `apps/api/.env`가 있어야 뜹니다. Postgres는 `docker compose up -d db`로 띄우고(접속 주소 `postgres://postgres:postgres@localhost:5432/wehere`), `.env`는 [`apps/api/README.md`](apps/api/README.md#실행)를 보고 준비합니다.
 
 ## Docker 환경
 
@@ -57,7 +57,7 @@ Postgres가 필요하면 `docker compose up -d db`로 띄웁니다. 접속 주�
 
 ```bash
 docker compose --profile app up -d --build
-curl http://localhost:4000/   # Hello World!
+curl http://localhost:4000/health   # {"status":"ok","checks":{"db":"ok"}}
 open http://localhost:3000
 docker compose --profile app down
 ```
@@ -82,7 +82,7 @@ we-here/
 │   │   ├── components.json       # shadcn/ui CLI 설정
 │   │   └── next.config.ts
 │   └── api/                      # NestJS 백엔드
-│       ├── src/                  # main.ts, app.module.ts, controller/service, *.spec.ts
+│       ├── src/                  # main.ts, app.ts, 기능별 controller/service, core(순수 로직), contract(OpenAPI)
 │       ├── test/                 # e2e 테스트 (*.e2e-spec.ts)
 │       ├── nest-cli.json
 │       ├── oxlint.json
@@ -163,16 +163,7 @@ pnpm --filter api test
 
 ### api (`apps/api`)
 
-| 명령 | 내용 |
-|---|---|
-| `dev` | `nest start --watch` (포트 4000) |
-| `start` / `start:dev` / `start:debug` | 실행 / 파일 변경 감지(watch) / 디버그 + watch |
-| `build` | `nest build` (결과물은 `dist/`) |
-| `start:prod` | `node dist/main` (`build` 이후) |
-| `test` / `test:watch` / `test:cov` | 단위 테스트 (Vitest) / watch / 커버리지 |
-| `test:e2e` | e2e 테스트 (`test/*.e2e-spec.ts`) |
-| `lint` | `oxlint src/ test/` |
-| `format` | Prettier (`src`, `test`) |
+[`apps/api/README.md`](apps/api/README.md#스크립트)를 보세요.
 
 ## web
 
@@ -223,34 +214,7 @@ shadcn CLI는 세미콜론 없이 코드를 생성하기 때문에 Biome 포맷�
 
 ## api
 
-NestJS 12 앱이며 ESM(`"type": "module"`, `module: nodenext`)으로 설정돼 있습니다. 그래서 상대 경로로 import할 때 확장자 `.js`를 붙여야 합니다.
-
-```ts
-import { AppModule } from './app.module.js';
-```
-
-### 실행
-
-API는 `PORT` 환경변수가 없으면 **4000번 포트**를 씁니다. 루트 `pnpm dev`가 api의 `dev`(`nest start --watch`)도 함께 실행합니다. API만 띄우려면:
-
-```bash
-pnpm --filter api dev
-curl http://localhost:4000/   # Hello World!
-```
-
-### 테스트
-
-| 종류 | 파일 패턴 | 설정 파일 | 명령 |
-|---|---|---|---|
-| 단위 | `**/*.spec.ts` | `vitest.config.ts` | `pnpm --filter api test` |
-| e2e | `**/*.e2e-spec.ts` | `vitest.config.e2e.ts` | `pnpm --filter api test:e2e` |
-
-Vitest의 `globals`가 켜져 있어서 `describe`, `it`, `expect`를 import 없이 쓸 수 있습니다.
-
-### 코드 스타일
-
-- lint: oxlint (`oxlint.json`)
-- format: Prettier (`.prettierrc`: 작은따옴표, trailing comma `all`)
+실행, 테스트, 환경 변수, API 문서는 [`apps/api/README.md`](apps/api/README.md)에 정리되어 있습니다.
 
 ## 브랜치와 커밋
 
