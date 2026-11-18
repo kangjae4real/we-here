@@ -72,7 +72,7 @@ IP당 시간당 \`ROOM_CREATE_LIMIT_PER_HOUR\`회(기본 10)로 제한한다.
           roomId: 'Zk3uP1xQx0aN8sYbVb2c9w',
           participantId: '6f1c2a9e-1c7b-4c1e-9a40-0b6f6e1f3a11',
           token: 'Q2l0eS1vZi1saWdodHMtYW5kLXJpdmVy',
-          inviteSecret: '8fk2-syQvT0pLx3mR9aW1bg',
+          inviteSecret: '8fk2-syQvT0pLx3mR9aW1b',
           expiresAt: '2024-04-01T00:00:00Z',
           revision: 1,
         },
@@ -162,7 +162,7 @@ IP당 시간당 10회 제한은 \`POST /rooms\`와 같다.
           schema: schemaRef('JoinRoomRequest'),
           example: {
             nickname: '도윤',
-            inviteSecret: '8fk2-syQvT0pLx3mR9aW1bg',
+            inviteSecret: '8fk2-syQvT0pLx3mR9aW1b',
           },
         },
       },

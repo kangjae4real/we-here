@@ -207,7 +207,11 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** 내 사진 전체 삭제 */
+    /**
+     * 내 사진 전체 삭제
+     * @description 요청한 참여자가 올린 사진과 썸네일을 모두 지운다. 상대 사진은 그대로다.
+     *     한 장이라도 지우면 `revision`이 1 오르고, 지울 것이 없으면 `deletedCount: 0`과 그대로인 `revision`을 준다.
+     */
     delete: operations['deleteMyPhotos'];
     options?: never;
     head?: never;
@@ -224,7 +228,11 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** 내 사진 한 장 삭제 */
+    /**
+     * 내 사진 한 장 삭제
+     * @description 내가 올린 사진 한 장과 썸네일을 지운다. 상대 사진이면 403 `not_owner`다.
+     *     지우면 `revision`이 1 오른다.
+     */
     delete: operations['deletePhoto'];
     options?: never;
     head?: never;
@@ -371,11 +379,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
-    /** @example Zk3uP1xQx0aN8sYbVb2c9w */
+    /**
+     * @description 방 id. 128bit 랜덤 값(base64url 22자)이라 추측할 수 없다. 초대 링크와 모든 방 경로에 쓴다.
+     * @example Zk3uP1xQx0aN8sYbVb2c9w
+     */
     RoomId: string;
-    /** @description 128bit 랜덤 값 (base64url 22자) */
+    /**
+     * @description 초대 비밀값. 128bit 랜덤 값 (base64url 22자). 초대 링크 `#` 뒤에 붙고, 상대를 내보내면 새 값으로 바뀐다.
+     * @example 8fk2-syQvT0pLx3mR9aW1b
+     */
     Secret: string;
-    /** @description 앞뒤 공백 제거 후 1~20자, 제어 문자 금지 */
+    /**
+     * @description 앞뒤 공백 제거 후 1~20자, 제어 문자 금지
+     * @example 서연
+     */
     Nickname: string;
     /**
      * Format: date
@@ -388,7 +405,10 @@ export interface components {
      * @example 2022-04-09T15:12:00
      */
     LocalDateTime: string;
-    /** @description 방 내용이 바뀔 때마다 1씩 오르는 값. FE 폴링과 갱신 판단에 쓴다. */
+    /**
+     * @description 방 내용이 바뀔 때마다 1씩 오르는 값. FE 폴링과 갱신 판단에 쓴다.
+     * @example 14
+     */
     Revision: number;
     /**
      * @description A는 방을 만든 사람(파란 원), B는 초대받은 사람(주황 마름모)
@@ -425,39 +445,79 @@ export interface components {
       | 'internal_error';
     /** @description RFC 9457 problem details. Nest 전역 ExceptionFilter 하나가 만든다. */
     Problem: {
-      /** Format: uri */
+      /**
+       * Format: uri
+       * @description 오류 종류 URI. `https://we-here.app/problems/{code}` 꼴이다.
+       * @example https://we-here.app/problems/room_expired
+       */
       type: string;
+      /**
+       * @description 개발자용 짧은 영문 요약. 화면에 그대로 보여주지 않는다.
+       * @example Room expired
+       */
       title: string;
+      /**
+       * @description HTTP 상태 코드 (응답 상태와 같다)
+       * @example 404
+       */
       status: number;
+      /** @description 개발자용 추가 설명. 있을 때만 온다. */
       detail?: string;
       code: components['schemas']['ErrorCode'];
       /** @description `x-request-id` 헤더와 같은 값. 5xx 화면에 앞 8자를 보여준다. */
       requestId: string;
       /** @description `validation_failed`일 때만 */
       errors?: {
+        /**
+         * @description 문제가 된 필드 경로
+         * @example nickname
+         */
         field: string;
+        /**
+         * @description 필드 오류 종류 (`required`, `too_long`, `invalid_format`, `unknown_field` 등)
+         * @example too_long
+         */
         code: string;
       }[];
     };
+    /** @description 서버 상태. DB에 닿지 못하면 이 본문 대신 503 Problem을 준다. */
     Health: {
-      /** @constant */
+      /**
+       * @description 항상 `ok`
+       * @constant
+       */
       status: 'ok';
+      /** @description 의존 서비스별 확인 결과 */
       checks: {
-        /** @constant */
+        /**
+         * @description Postgres 연결
+         * @constant
+         */
         db?: 'ok';
       };
     };
+    /** @description 방 만들기 입력 (화면 02a). 만든 사람이 슬롯 A가 된다. */
     CreateRoomRequest: {
-      /** @description 방 이름 (화면 02a). 앞뒤 공백 제거 후 1~30자. */
+      /**
+       * @description 방 이름 (화면 02a). 앞뒤 공백 제거 후 1~30자.
+       * @example 우리가 스친 곳
+       */
       name: string;
       nickname: components['schemas']['Nickname'];
       metOn: components['schemas']['MetOn'];
     };
+    /** @description 만든 방과 만든 사람(슬롯 A)의 인증 정보. FE는 `token`을 방별로 `localStorage`에 저장한다. */
     CreateRoomResponse: {
       roomId: components['schemas']['RoomId'];
-      /** Format: uuid */
+      /**
+       * Format: uuid
+       * @description 내 참여자 id
+       */
       participantId: string;
-      /** @description 참여자 토큰. 이 응답에서만 받을 수 있다. */
+      /**
+       * @description 참여자 토큰 (256bit, base64url 43자). 이 응답에서만 받을 수 있다. 이후 요청의 `X-Participant-Token` 헤더에 넣는다. 서버는 해시만 저장한다.
+       * @example vJ3kQ9mX2pLr8sTn4wYc6bHd1fGa7eUz0iKo5qRtN2M
+       */
       token: string;
       inviteSecret: components['schemas']['Secret'];
       /**
@@ -467,6 +527,7 @@ export interface components {
       expiresAt: string;
       revision: components['schemas']['Revision'];
     };
+    /** @description 초대 링크를 연 사람에게 보여줄 방 정보 (화면 04). 비밀값이 맞을 때만 준다. */
     InvitePreview: {
       /**
        * @description 들어오면 받게 될 자리. 화면 04 "너는 주황 마름모로 표시돼" 문구와 아이콘을 정한다.
@@ -479,28 +540,45 @@ export interface components {
       /** @description 방에 남아 있는 사람의 닉네임 ("서연이 너를 초대했어") */
       inviterNickname: string;
       metOn: components['schemas']['MetOn'];
-      /** @enum {string} */
+      /**
+       * @description `open` 자리가 남아 있어 참여할 수 있음 / `full` 두 명이 다 있음 (S7)
+       * @enum {string}
+       */
       status: 'open' | 'full';
     };
+    /** @description 초대 링크로 방에 들어가기 (화면 04) */
     JoinRoomRequest: {
       nickname: components['schemas']['Nickname'];
       inviteSecret: components['schemas']['Secret'];
     };
+    /** @description 들어간 사람의 인증 정보와 받은 자리 */
     JoinRoomResponse: {
       roomId: components['schemas']['RoomId'];
-      /** Format: uuid */
+      /**
+       * Format: uuid
+       * @description 내 참여자 id
+       */
       participantId: string;
+      /**
+       * @description 참여자 토큰. 이 응답에서만 받을 수 있다. 이후 요청의 `X-Participant-Token` 헤더에 넣는다.
+       * @example vJ3kQ9mX2pLr8sTn4wYc6bHd1fGa7eUz0iKo5qRtN2M
+       */
       token: string;
       slot: components['schemas']['Slot'];
       revision: components['schemas']['Revision'];
     };
+    /** @description 방에 있는 사람 한 명 */
     Participant: {
-      /** Format: uuid */
+      /**
+       * Format: uuid
+       * @description 참여자 id
+       */
       id: string;
-      nickname: string;
+      nickname: components['schemas']['Nickname'];
       slot: components['schemas']['Slot'];
       /** @description 저장된 사진 수 (기록 탭의 "128장") */
       photoCount: number;
+      /** @description AI 채팅에 사진 기록을 쓰는 데 동의했는지. 두 사람이 모두 true여야 채팅할 수 있다 (S5). */
       aiConsent: boolean;
     };
     /**
@@ -508,13 +586,29 @@ export interface components {
      *     채팅 탭은 "이번 1시간 3/30"처럼 보여준다(Figma의 "오늘 3/20" 문구는 바꾼다). `resetAt`은 가장 오래된 예약이 1시간을 넘기는 시각.
      */
     ChatQuota: {
+      /**
+       * @description 최근 1시간 동안 쓴 답변 수
+       * @example 3
+       */
       used: number;
+      /**
+       * @description 1시간 한도 (`CHAT_ROOM_HOURLY_LIMIT`)
+       * @example 30
+       */
       limit: number;
-      /** Format: date-time */
+      /**
+       * Format: date-time
+       * @description 한 칸이 다시 비는 시각. 아직 쓴 것이 없으면 지금 시각.
+       */
       resetAt: string;
     };
+    /** @description 방 화면 전체가 쓰는 방 정보. FE는 이것을 폴링해 `revision`과 `chatLastMessageId`가 바뀌었는지 본다. */
     Room: {
       roomId: components['schemas']['RoomId'];
+      /**
+       * @description 방 이름
+       * @example 우리가 스친 곳
+       */
       name: string;
       metOn: components['schemas']['MetOn'];
       /**
@@ -528,6 +622,7 @@ export interface components {
        * @description 요청 토큰 주인의 참여자 id
        */
       meId: string;
+      /** @description 방에 있는 사람들 (1~2명) */
       participants: components['schemas']['Participant'][];
       /** @description 자리가 비어 있을 때만 값이 있다 (S2 "링크 다시 보내기"). 두 명이 다 있으면 null. */
       inviteSecret: components['schemas']['Secret'] | null;
@@ -543,30 +638,50 @@ export interface components {
       /** @description 참여자당 저장할 수 있는 사진 수 (`PHOTO_LIMIT_PER_PARTICIPANT`, 기본 2,000). FE가 고르기 전에 남은 수를 안내한다. */
       photoLimit: number;
     };
+    /** @description 처음 만난 날 고치기 (화면 10). 스친 순간 계산 기준이 바뀐다. */
     UpdateRoomRequest: {
       metOn: components['schemas']['MetOn'];
     };
+    /** @description 바뀐 만난 날과 새 revision */
     UpdateRoomResponse: {
       roomId: components['schemas']['RoomId'];
       metOn: components['schemas']['MetOn'];
       revision: components['schemas']['Revision'];
     };
+    /** @description 내 설정 바꾸기 (화면 09 동의 시트, 화면 10) */
     UpdateMeRequest: {
+      /** @description AI 채팅에 내 사진 기록을 쓰는 데 동의하면 true, 철회하면 false */
       aiConsent: boolean;
     };
+    /** @description 바뀐 내 설정 */
     UpdateMeResponse: {
-      /** Format: uuid */
+      /**
+       * Format: uuid
+       * @description 내 참여자 id
+       */
       participantId: string;
+      /** @description 저장된 동의 값 */
       aiConsent: boolean;
       revision: components['schemas']['Revision'];
     };
+    /** @description 나가기 결과. 내 사진과 이 방 채팅 기록이 지워지고 토큰은 더 쓸 수 없다. */
     LeaveRoomResponse: {
+      /**
+       * @description 함께 지운 내 사진 수
+       * @example 128
+       */
       deletedPhotoCount: number;
       /** @description 마지막 사람이 나가서 방도 지워졌으면 true */
       roomDeleted: boolean;
     };
+    /** @description 상대 내보내기 결과. 상대의 사진과 채팅 기록이 지워지고, 예전 초대 링크는 막힌다. */
     RemovePartnerResponse: {
+      /**
+       * @description 함께 지운 상대 사진 수
+       * @example 97
+       */
       deletedPhotoCount: number;
+      /** @description 새로 만든 초대 비밀값. 새 링크를 보낼 때 쓴다. */
       inviteSecret: components['schemas']['Secret'];
       revision: components['schemas']['Revision'];
     };
@@ -576,25 +691,59 @@ export interface components {
       clientIndex: number;
       /** @description SHA-256(DateTimeOriginal|SubSecTimeOriginal|위도 5자리|경도 5자리|Make|Model) */
       dedupeKey: string;
-      /** @description (0, 0)은 위치 없음으로 보고 FE가 보내지 않는다. */
+      /**
+       * @description 위도 (WGS84). (0, 0)은 위치 없음으로 보고 FE가 보내지 않는다.
+       * @example 37.5665
+       */
       lat: number;
+      /**
+       * @description 경도 (WGS84)
+       * @example 126.9784
+       */
       lng: number;
       /**
        * @description EXIF 원문. 실제 달력으로 검사하고 연도는 1990~올해+1만 받는다.
        * @example 2022:04:09 15:12:03
        */
       dateTimeOriginal: string;
+      /**
+       * @description EXIF SubSecTimeOriginal (초 아래 자리). `dedupeKey`에 들어간다.
+       * @example 123
+       */
       subSecTimeOriginal?: string;
-      /** @example +09:00 */
+      /**
+       * @description EXIF OffsetTimeOriginal (촬영 시각의 UTC 차이). 있으면 이 값으로 시간대를 정한다.
+       * @example +09:00
+       */
       offsetTimeOriginal?: string;
-      /** @example 2022:04:09 */
+      /**
+       * @description EXIF GPSDateStamp (UTC 날짜). 시간대를 추정할 때 쓴다.
+       * @example 2022:04:09
+       */
       gpsDateStamp?: string;
-      /** @example 06:12:03 */
+      /**
+       * @description EXIF GPSTimeStamp (UTC 시각)
+       * @example 06:12:03
+       */
       gpsTimeStamp?: string;
+      /**
+       * @description 카메라 제조사 (EXIF Make). `dedupeKey`에 들어간다.
+       * @example Apple
+       */
       make?: string;
+      /**
+       * @description 카메라 모델 (EXIF Model). `dedupeKey`에 들어간다.
+       * @example iPhone 15 Pro
+       */
       model?: string;
     };
-    /** @enum {string} */
+    /**
+     * @description 사진 한 장이 저장되지 않은 이유. 배치 안의 다른 사진은 그대로 저장된다.
+     *     `invalid_lat`·`invalid_lng` 좌표 범위 밖 또는 (0, 0) / `invalid_datetime` 촬영 시각 형식·범위 오류 /
+     *     `invalid_dedupe_key` 해시 형식 오류 / `thumb_too_large` 썸네일이 너무 큼 / `thumb_not_jpeg` 썸네일이 JPEG가 아님 /
+     *     `photo_limit_reached` 참여자당 사진 한도(`photoLimit`) 초과
+     * @enum {string}
+     */
     PhotoErrorCode:
       | 'invalid_lat'
       | 'invalid_lng'
@@ -603,8 +752,14 @@ export interface components {
       | 'thumb_too_large'
       | 'thumb_not_jpeg'
       | 'photo_limit_reached';
+    /** @description 보낸 사진 한 장의 처리 결과. 요청의 `clientIndex`로 맞춘다. */
     UploadResult: {
+      /**
+       * @description 요청에서 보낸 순번 그대로
+       * @example 0
+       */
       clientIndex: number;
+      /** @description 요청에서 보낸 값 그대로 */
       dedupeKey: string;
       /**
        * @description `duplicate`는 이미 저장된 사진이라 FE가 저장된 점으로 그린다.
@@ -616,36 +771,66 @@ export interface components {
        * @description `saved`, `duplicate`일 때
        */
       photoId?: string;
+      /** @description `error`일 때만 */
       error?: {
         code: components['schemas']['PhotoErrorCode'];
+        /**
+         * @description 문제가 된 필드 이름
+         * @example lat
+         */
         field?: string;
       };
     };
+    /** @description 배치 업로드 결과. 한 장이라도 저장되면 `revision`이 1 오르고, 모두 중복·오류면 그대로다. */
     UploadPhotosResponse: {
       revision: components['schemas']['Revision'];
+      /** @description 보낸 사진마다 하나씩, 보낸 순서대로 */
       results: components['schemas']['UploadResult'][];
     };
+    /** @description 사진 삭제 결과 */
     DeletePhotosResponse: {
+      /**
+       * @description 지운 사진 수. 0이면 `revision`도 그대로다.
+       * @example 1
+       */
       deletedCount: number;
       revision: components['schemas']['Revision'];
     };
+    /** @description 서버에 저장된 사진 한 장 (지도 점 하나). 원본 사진은 없고 메타데이터와 썸네일만 있다. */
     Photo: {
       /**
        * Format: date-time
        * @description 서버에 저장된 시각. 화면 05(데스크톱) "최근 올린 사진"과 갱신 토스트 "도윤이 사진 N장을 올렸어"에 쓴다.
        */
       uploadedAt: string;
-      /** Format: uuid */
+      /**
+       * Format: uuid
+       * @description 사진 id
+       */
       id: string;
-      /** Format: uuid */
+      /**
+       * Format: uuid
+       * @description 올린 사람. `participants`에서 슬롯(점 모양과 색)을 찾는다.
+       */
       participantId: string;
       /** @description 업로드 중 흐린 점과 서버 사진을 `(participantId, dedupeKey)`로 맞출 때 쓴다. */
       dedupeKey: string;
-      /** @description 소수 4자리로 반올림된 값 */
+      /**
+       * @description 위도. 소수 4자리(약 11m)로 반올림된 값
+       * @example 37.5665
+       */
       lat: number;
+      /**
+       * @description 경도. 소수 4자리로 반올림된 값
+       * @example 126.9784
+       */
       lng: number;
       takenLocal: components['schemas']['LocalDateTime'];
-      /** Format: date-time */
+      /**
+       * Format: date-time
+       * @description `takenLocal`을 `tzOffsetMin`으로 UTC로 바꾼 값. 두 사람 사진을 비교할 때 쓴다.
+       * @example 2022-04-09T06:12:00Z
+       */
       takenUtc: string;
       /** @description 현지 시각 − UTC (분). KST는 540. */
       tzOffsetMin: number;
@@ -664,9 +849,15 @@ export interface components {
     };
     /** @description 스친 순간·1막 카드의 한쪽 사진 (폴라로이드 하나) */
     MomentSide: {
-      /** Format: uuid */
+      /**
+       * Format: uuid
+       * @description 사진을 올린 참여자 id
+       */
       participantId: string;
-      /** Format: uuid */
+      /**
+       * Format: uuid
+       * @description `photos`의 사진 id. 썸네일은 거기서 찾는다.
+       */
       photoId: string;
       takenLocal: components['schemas']['LocalDateTime'];
     };
@@ -680,93 +871,180 @@ export interface components {
       distanceM: number;
       /** @description 두 사진의 촬영 시각 차이 (분) */
       gapMin: number;
+      /** @description 두 사진의 중간 지점. 지도에서 카드를 이 위치에 띄운다. */
       center: components['schemas']['LatLng'];
+      /**
+       * @description 중간 지점의 동네 이름. 실패하면 null.
+       * @example 성수동
+       */
       placeLabel: string | null;
+      /** @description 두 사진 중 하나라도 시각이 불확실하면(`Photo.uncertain`) true */
       uncertain: boolean;
     };
     /** @description 스친 순간이 0개일 때 보여줄 "가장 가까웠던 순간" (최대 3개, 스친 순간과 다른 모양으로 표시) */
     ClosestMoment: {
+      /** @description 사진 쌍으로 만든 안정적인 id */
       id: string;
       a: components['schemas']['MomentSide'];
       b: components['schemas']['MomentSide'];
+      /**
+       * @description 두 사진 사이 거리 (m)
+       * @example 1840
+       */
       distanceM: number;
+      /**
+       * @description 두 사진의 촬영 시각 차이 (분). 24시간 안의 쌍만 고른다.
+       * @example 95
+       */
       gapMin: number;
+      /** @description 중간 지점의 동네 이름. 실패하면 null. */
       placeLabel: string | null;
     };
+    /** @description 지도 좌표 (WGS84) */
     LatLng: {
+      /**
+       * @description 위도
+       * @example 37.5446
+       */
       lat: number;
+      /**
+       * @description 경도
+       * @example 127.0559
+       */
       lng: number;
     };
+    /** @description 히트맵 칸 하나 (화면 08). 처음 만난 날 이후 사진만 센다. 칸은 geohash 7자리(약 150m 사각형)다. */
     HeatCell: {
+      /**
+       * @description `P-` + geohash 7자리. 채팅 근거 칩이 이 id로 장소를 연다.
+       * @example P-wydm9qy
+       */
       cellId: string;
-      /** @description 칸 중심 */
+      /** @description 칸 중심 위도 */
       lat: number;
+      /** @description 칸 중심 경도 */
       lng: number;
       /** @description 만난 후 둘 중 누구라도 이 칸에 사진을 남긴 서로 다른 날 수 */
       days: number;
-      /** @description 네이버 HeatMap용으로 정규화한 값 */
+      /** @description 네이버 HeatMap용으로 정규화한 값. 가장 많은 칸의 `days`로 나누고 0.1 아래는 0.1로 올린다. */
       weight: number;
+      /** @description 칸 중심의 동네 이름. 실패하면 null. */
       placeLabel: string | null;
     };
+    /** @description 자주 간 장소 순위 한 줄 (화면 08 "자주 간 곳") */
     TopPlace: {
+      /** @description 1부터 시작하는 순위 */
       rank: number;
+      /**
+       * @description `heatmap.cells`의 칸 id
+       * @example P-wydm9qy
+       */
       cellId: string;
+      /**
+       * @description 동네 이름. 실패하면 null.
+       * @example 성수동
+       */
       placeLabel: string | null;
+      /**
+       * @description 둘 중 누구라도 이 칸에 사진을 남긴 서로 다른 날 수
+       * @example 12
+       */
       days: number;
     };
-    /** @description 1막 "같은 곳, 다른 때" 카드 한 장 */
+    /** @description 1막 "같은 곳, 다른 때" 카드 한 장. 만나기 전, 150m 안에서 시각만 달랐던 두 사진이다. 스친 순간이 있는 칸은 뺀다. */
     Act1Item: {
+      /** @description 두 사진 중간 지점의 칸 id (`P-…`) */
       cellId: string;
+      /** @description 동네 이름. 실패하면 null. */
       placeLabel: string | null;
       a: components['schemas']['MomentSide'];
       b: components['schemas']['MomentSide'];
       /** @description 같은 날 엇갈렸으면 true ("같은 날, 3시간 차이") */
       sameDay: boolean;
+      /**
+       * @description 두 사진의 촬영 시각 차이 (분)
+       * @example 180
+       */
       gapMin: number;
     };
     /** @description 리플레이 챕터 목록 (화면 07의 ①7곳 ②2번 ③2024.03.02부터) */
     Story: {
+      /** @description 1막: 같은 곳, 다른 때 (만나기 전) */
       act1: {
         /** @description 조건에 맞는 칸 전체 수 (화면 "7곳") */
         total: number;
+        /** @description 시각 차이가 작은 순으로 최대 10장 */
         items: components['schemas']['Act1Item'][];
       };
+      /** @description 2막: 스친 순간 (만나기 전) */
       act2: {
-        /** @description 시간순. 개수가 화면의 "2번"이다. */
+        /** @description `encounters`의 id. 시간순. 개수가 화면의 "2번"이다. */
         encounterIds: string[];
       };
+      /** @description 3막: 만난 뒤 함께한 기록 */
       act3: {
         from: components['schemas']['MetOn'];
+        /**
+         * @description 만난 뒤 사진을 남긴 칸 수
+         * @example 23
+         */
         placeCount: number;
+        /**
+         * @description 만난 뒤 사진을 남긴 서로 다른 날 수
+         * @example 41
+         */
         dayCount: number;
       };
     };
     /** @description 기록 탭 요약 세 줄 (화면 05) */
     RecordStats: {
+      /** @description 두 사람 사진 중 가장 오래된 것. 사진이 없으면 null. */
       oldest: components['schemas']['PhotoBrief'] | null;
+      /** @description 두 사람 사진 중 가장 최근 것. 사진이 없으면 null. */
       newest: components['schemas']['PhotoBrief'] | null;
       /** @description 만난 뒤 사진을 남긴 칸 수 (화면 "함께 간 장소 23곳") */
       afterMetPlaceCount: number;
     };
+    /** @description 요약 한 줄에 쓰는 사진 시각과 장소 */
     PhotoBrief: {
       takenLocal: components['schemas']['LocalDateTime'];
+      /**
+       * @description 동네 이름. 실패하면 null.
+       * @example 연남동
+       */
       placeLabel: string | null;
     };
+    /** @description 방 화면이 그리는 모든 데이터 (기록·리플레이·스친 순간·히트맵). 서버가 사진 전체로 계산하고 `revision`이 바뀌면 다시 받는다. */
     Snapshot: {
       revision: components['schemas']['Revision'];
       /** @description 스친 순간 기준값. 카드의 기준 문구가 이 값을 읽는다. */
       criteria: {
+        /**
+         * @description 두 사진 거리가 이 값(m) 이하여야 스친 순간
+         * @example 250
+         */
         radiusM: number;
+        /**
+         * @description 두 사진 시각 차이가 이 값(분) 이하여야 스친 순간
+         * @example 10
+         */
         windowMin: number;
+        /**
+         * @description 이 값(분) 안에 이어진 후보는 한 번으로 합친다
+         * @example 30
+         */
         mergeGapMin: number;
       };
       stats: components['schemas']['RecordStats'];
+      /** @description 두 사람의 사진 전체 */
       photos: components['schemas']['Photo'][];
-      /** @description 스친 순간. 시간순. */
+      /** @description 스친 순간 (만나기 전, `criteria` 안에서 두 사람이 가까이 있었던 때). 시간순. */
       encounters: components['schemas']['Encounter'][];
       /** @description 스친 순간이 0개일 때만 채운다 (S4) */
       closest: components['schemas']['ClosestMoment'][];
+      /** @description 만난 뒤 함께한 장소 히트맵 (화면 08) */
       heatmap: {
+        /** @description 사진이 있는 칸 전부. 날 수가 많은 순. */
         cells: components['schemas']['HeatCell'][];
         /** @description 날 수가 많은 순. 화면 08은 앞 3개를 쓴다. */
         top: components['schemas']['TopPlace'][];
@@ -775,9 +1053,15 @@ export interface components {
     };
     /** @description 방에 저장된 채팅 메시지 하나 */
     ChatMessage: {
-      /** Format: uuid */
+      /**
+       * Format: uuid
+       * @description 메시지 id
+       */
       id: string;
-      /** @enum {string} */
+      /**
+       * @description `user` 참여자의 질문 / `assistant` AI 답변
+       * @enum {string}
+       */
       role: 'user' | 'assistant';
       /**
        * Format: uuid
@@ -794,9 +1078,13 @@ export interface components {
        * @enum {string}
        */
       status: 'streaming' | 'complete' | 'truncated' | 'failed';
-      /** Format: date-time */
+      /**
+       * Format: date-time
+       * @description 메시지가 저장된 시각
+       */
       createdAt: string;
     };
+    /** @description 방의 채팅 기록 한 페이지 */
     ChatHistory: {
       /** @description 오래된 순 */
       messages: components['schemas']['ChatMessage'][];
@@ -814,9 +1102,15 @@ export interface components {
           /** @constant */
           type: 'meta';
           revision: components['schemas']['Revision'];
-          /** Format: uuid */
+          /**
+           * Format: uuid
+           * @description 저장된 내 질문 메시지 id
+           */
           userMessageId: string;
-          /** Format: uuid */
+          /**
+           * Format: uuid
+           * @description 저장 중인 답변 메시지 id (`streaming` 상태)
+           */
           assistantMessageId: string;
           /** @description 답변 속 근거 칩으로 바꿔도 되는 id (`E-…` 스친 순간, `P-…` 장소) */
           evidenceIds: string[];
@@ -825,6 +1119,10 @@ export interface components {
       | {
           /** @constant */
           type: 'text';
+          /**
+           * @description 이어 붙일 답변 텍스트
+           * @example 2022년 4월 9일에
+           */
           delta: string;
         }
       | {
@@ -840,6 +1138,7 @@ export interface components {
           /** @constant */
           type: 'error';
           code: components['schemas']['ErrorCode'];
+          /** @description `x-request-id`와 같은 값 */
           requestId: string;
         };
   };
@@ -937,8 +1236,9 @@ export interface components {
     };
   };
   parameters: {
-    /** @description 128bit 랜덤 값 (base64url 22자) */
+    /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
     RoomId: components['schemas']['RoomId'];
+    /** @description 사진 id (`Photo.id`) */
     PhotoId: string;
   };
   requestBodies: never;
@@ -1013,7 +1313,7 @@ export interface operations {
            *       "roomId": "Zk3uP1xQx0aN8sYbVb2c9w",
            *       "participantId": "6f1c2a9e-1c7b-4c1e-9a40-0b6f6e1f3a11",
            *       "token": "Q2l0eS1vZi1saWdodHMtYW5kLXJpdmVy",
-           *       "inviteSecret": "8fk2-syQvT0pLx3mR9aW1bg",
+           *       "inviteSecret": "8fk2-syQvT0pLx3mR9aW1b",
            *       "expiresAt": "2024-04-01T00:00:00Z",
            *       "revision": 1
            *     }
@@ -1034,7 +1334,7 @@ export interface operations {
         'X-Invite-Secret': components['schemas']['Secret'];
       };
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;
@@ -1071,7 +1371,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;
@@ -1081,7 +1381,7 @@ export interface operations {
         /**
          * @example {
          *       "nickname": "도윤",
-         *       "inviteSecret": "8fk2-syQvT0pLx3mR9aW1bg"
+         *       "inviteSecret": "8fk2-syQvT0pLx3mR9aW1b"
          *     }
          */
         'application/json': components['schemas']['JoinRoomRequest'];
@@ -1127,7 +1427,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;
@@ -1187,7 +1487,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;
@@ -1223,7 +1523,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;
@@ -1249,7 +1549,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;
@@ -1280,7 +1580,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
         participantId: string;
       };
@@ -1316,7 +1616,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;
@@ -1397,7 +1697,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;
@@ -1423,8 +1723,9 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
+        /** @description 사진 id (`Photo.id`) */
         photoId: components['parameters']['PhotoId'];
       };
       cookie?: never;
@@ -1471,6 +1772,7 @@ export interface operations {
       };
       header?: never;
       path: {
+        /** @description 사진 id (`Photo.id`) */
         photoId: components['parameters']['PhotoId'];
       };
       cookie?: never;
@@ -1513,7 +1815,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;
@@ -1658,7 +1960,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;
@@ -1712,7 +2014,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description 128bit 랜덤 값 (base64url 22자) */
+        /** @description 방 id. 128bit 랜덤 값 (base64url 22자) */
         roomId: components['parameters']['RoomId'];
       };
       cookie?: never;

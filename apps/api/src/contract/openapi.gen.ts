@@ -147,7 +147,7 @@ export const CONTRACT_SCHEMA = {
       required: ['id', 'nickname', 'slot', 'photoCount', 'aiConsent'],
       properties: {
         id: { type: 'string', format: 'uuid' },
-        nickname: { type: 'string' },
+        nickname: { $ref: '#/$defs/Nickname' },
         slot: { $ref: '#/$defs/Slot' },
         photoCount: { type: 'integer', minimum: 0 },
         aiConsent: { type: 'boolean' },
@@ -239,7 +239,7 @@ export const CONTRACT_SCHEMA = {
       required: ['deletedPhotoCount', 'inviteSecret', 'revision'],
       properties: {
         deletedPhotoCount: { type: 'integer' },
-        inviteSecret: { $ref: '#/$defs/Secret' },
+        inviteSecret: { allOf: [{ $ref: '#/$defs/Secret' }] },
         revision: { $ref: '#/$defs/Revision' },
       },
     },
@@ -373,7 +373,7 @@ export const CONTRACT_SCHEMA = {
         b: { $ref: '#/$defs/MomentSide' },
         distanceM: { type: 'integer' },
         gapMin: { type: 'integer' },
-        center: { $ref: '#/$defs/LatLng' },
+        center: { allOf: [{ $ref: '#/$defs/LatLng' }] },
         placeLabel: { type: ['string', 'null'] },
         uncertain: { type: 'boolean' },
       },
@@ -382,7 +382,7 @@ export const CONTRACT_SCHEMA = {
       type: 'object',
       required: ['id', 'a', 'b', 'distanceM', 'gapMin', 'placeLabel'],
       properties: {
-        id: { type: 'string' },
+        id: { type: 'string', pattern: '^C-[a-z0-9]{6}$' },
         a: { $ref: '#/$defs/MomentSide' },
         b: { $ref: '#/$defs/MomentSide' },
         distanceM: { type: 'integer' },

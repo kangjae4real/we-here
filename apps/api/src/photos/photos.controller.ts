@@ -140,6 +140,9 @@ FE는 좌표와 \`DateTimeOriginal\`이 둘 다 있는 사진만 보내고, 요�
     tags: ['photos'],
     operationId: 'deleteMyPhotos',
     summary: '내 사진 전체 삭제',
+    description: `요청한 참여자가 올린 사진과 썸네일을 모두 지운다. 상대 사진은 그대로다.
+한 장이라도 지우면 \`revision\`이 1 오르고, 지울 것이 없으면 \`deletedCount: 0\`과 그대로인 \`revision\`을 준다.
+`,
   })
   @ApiParam(PARAMETERS.RoomId)
   @ApiResponse({
@@ -164,6 +167,9 @@ FE는 좌표와 \`DateTimeOriginal\`이 둘 다 있는 사진만 보내고, 요�
     tags: ['photos'],
     operationId: 'deletePhoto',
     summary: '내 사진 한 장 삭제',
+    description: `내가 올린 사진 한 장과 썸네일을 지운다. 상대 사진이면 403 \`not_owner\`다.
+지우면 \`revision\`이 1 오른다.
+`,
   })
   @ApiParam(PARAMETERS.RoomId)
   @ApiParam(PARAMETERS.PhotoId)
