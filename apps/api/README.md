@@ -1,114 +1,138 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# api
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+we-here의 NestJS 12 API 서버입니다. 방, 사진, 스냅샷(스친 순간·히트맵), AI 채팅을 맡습니다. web은 `/api/v1/*` 프록시를 거쳐 이 서버하고만 통신합니다.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+이 문서의 명령은 모두 **저장소 루트**에서 실행합니다.
 
-## Description
+## 실행
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+API는 Postgres와 `apps/api/.env`가 있어야 뜹니다.
 
 ```bash
-$ pnpm install
+docker compose up -d db                  # Postgres 16, 127.0.0.1:5432
+cp apps/api/.env.example apps/api/.env   # 처음 한 번
+pnpm --filter api dev                    # 포트 4000 (PORT로 변경)
+curl http://localhost:4000/health        # {"status":"ok","checks":{"db":"ok"}}
+open http://localhost:4000/docs          # Swagger UI
 ```
 
-## Compile and run the project
+루트 `pnpm dev`도 api의 `dev`(`nest start --watch`)를 함께 실행합니다.
+
+서버는 시작할 때 `apps/api/.env`를 읽고, 마이그레이션(`migrations/*.sql`)을 자동으로 적용합니다. `.env.example`의 값 그대로면 외부 키 없이 모든 API가 동작합니다. AI 채팅과 장소 이름은 가짜 값을 돌려줍니다.
+
+Swagger UI에서 호출하는 순서는 다음과 같습니다.
+
+1. `POST /rooms`로 방을 만듭니다.
+2. 응답의 `token`을 복사합니다.
+3. 오른쪽 위 **Authorize**에 붙여 넣습니다.
+
+## 스크립트
+
+`pnpm --filter api <명령>`으로 실행합니다.
+
+| 명령 | 내용 |
+|---|---|
+| `dev` | `nest start --watch` (포트 4000) |
+| `start` / `start:dev` / `start:debug` | 실행 / 파일 변경 감지(watch) / 디버그 + watch |
+| `build` | `nest build` (결과물은 `dist/`) |
+| `start:prod` | `node dist/main` (`build` 이후) |
+| `test` / `test:watch` / `test:cov` | 단위 테스트 (Vitest) / watch / 커버리지 |
+| `test:e2e` | e2e 테스트 (`test/*.e2e-spec.ts`) |
+| `contract:emit` | 코드로 만든 OpenAPI 문서를 `docs/api/openapi.yaml`과 `src/contract/*.gen.ts`에 씁니다 ([API 문서](#api-문서)) |
+| `lint` | `oxlint src/ test/ scripts/` |
+| `format` | Prettier (`src`, `test`) |
+
+## 테스트
+
+| 종류 | 파일 패턴 | 설정 파일 | 명령 |
+|---|---|---|---|
+| 단위 | `**/*.spec.ts` | `vitest.config.ts` | `pnpm --filter api test` |
+| e2e | `**/*.e2e-spec.ts` | `vitest.config.e2e.ts` | `pnpm --filter api test:e2e` |
+
+Vitest의 `globals`가 켜져 있어서 `describe`, `it`, `expect`를 import 없이 쓸 수 있습니다.
+
+### 테스트별로 필요한 것
+
+| 명령 | Postgres | env 설정 |
+|---|---|---|
+| `pnpm --filter api test` (단위 테스트) | 필요 없음 | 필요 없음 |
+| `pnpm --filter api contract:emit` | 필요 없음 | 필요 없음 |
+| `pnpm --filter api test:e2e` | **필요** | 필요 없음 (`TEST_DATABASE_URL`만 선택) |
+| 서버를 띄워 Swagger로 직접 호출 | **필요** | `apps/api/.env` 필요 |
+
+테스트는 `apps/api/.env`와 셸의 env를 읽지 않습니다. 필요한 값은 `test/env.ts`에 고정되어 있습니다. 그래서 `.env`에 실제 LLM 키를 넣어 두어도 테스트는 외부 서비스를 부르지 않고 `LLM_PROVIDER=fake`, `GEOCODER=fake`로 돕니다.
+
+### e2e 테스트
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+docker compose up -d db
+pnpm --filter api test:e2e
 ```
 
-## Run tests
+- e2e는 시작할 때 테스트 DB `wehere_test`를 **지우고 다시 만든 뒤** 마이그레이션을 적용합니다. 개발용 DB `wehere`는 건드리지 않습니다.
+- 다른 Postgres를 쓰려면 `TEST_DATABASE_URL`로 바꿉니다. 이 계정은 DB를 만들고 지울 권한이 있어야 합니다. 테스트가 같은 서버의 `postgres` DB에 접속해 `wehere_test`를 지우고 다시 만들기 때문입니다.
+
+  ```bash
+  TEST_DATABASE_URL=postgres://user:pass@host:5432/wehere_test pnpm --filter api test:e2e
+  ```
+
+- 끝나면 `Contract coverage: 64/64`처럼 문서에 적힌 (API, 상태 코드) 조합을 몇 개 확인했는지 출력합니다. 하나라도 빠지면 테스트가 실패합니다.
+- CI(`.github/workflows/ci.yml`)도 Postgres 16 서비스 컨테이너를 띄우고 같은 명령을 실행합니다.
+
+## 환경 변수 (`apps/api/.env`)
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `DATABASE_URL` | (필수) | Postgres 접속 주소 |
+| `THUMB_SIGNING_SECRET` | (필수) | 썸네일 URL 서명 키. 32자 이상. 바꾸면 이미 발급한 썸네일 URL이 모두 무효가 됩니다 |
+| `PORT` | `4000` | API 포트 |
+| `API_DOCS` | `NODE_ENV=production`이면 `off`, 아니면 `on` | `/docs` Swagger UI와 `/docs/openapi.json`, `/docs/openapi.yaml` 제공 여부 |
+| `ROOM_CREATE_LIMIT_PER_HOUR` | `10` | IP당 1시간 방 만들기 횟수. 방 참여에도 같은 값을 따로 적용합니다 |
+| `INVITE_PREVIEW_LIMIT_PER_HOUR` | `60` | IP당 1시간 초대 미리보기 횟수 |
+| `PHOTO_LIMIT_PER_PARTICIPANT` | `2000` | 참여자당 저장할 수 있는 사진 수 |
+| `CHAT_ROOM_HOURLY_LIMIT` | `30` | 방마다 1시간 AI 답변 수 |
+| `CHAT_DAILY_LIMIT` | `500` | 서비스 전체 하루(KST) AI 답변 수 |
+| `GEOCODER` | `none` | 장소 이름. `none` 이름 없음 / `fake` 가짜 이름 / `naver` 네이버 역지오코딩 |
+| `NCP_CLIENT_ID`, `NCP_CLIENT_SECRET` | | `GEOCODER=naver`일 때 필수 (NCP Maps) |
+| `LLM_PROVIDER` | (없음) | `fake` 또는 `openai-compatible`. 비워 두면 서버는 뜨지만 채팅이 503 `server_misconfigured`를 줍니다 |
+| `LLM_MODEL`, `LLM_API_KEY` | | `openai-compatible`일 때 필수 |
+| `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI 호환 엔드포인트 주소 |
+| `LLM_FIRST_TOKEN_TIMEOUT_MS` | `30000` | 첫 응답까지 기다리는 시간 |
+| `LLM_IDLE_TIMEOUT_MS` | `15000` | 응답 조각 사이에 기다리는 시간 |
+| `LLM_FAKE_SCENARIO` | `ok` | `fake` 전용. `ok`, `length`, `mid_error`, `empty`, `rate_limited`, `error` 중 하나로 상황을 흉내 냅니다 |
+| `LLM_FAKE_DELAY_MS` | `0` | `fake` 전용. 응답 조각 사이 지연. 스트리밍 화면을 볼 때 `300` 정도로 둡니다 |
+
+### 실제 AI 모델로 테스트하기
+
+`openai-compatible` 하나로 OpenAI Chat Completions 형식을 쓰는 서비스에 붙습니다. `apps/api/.env`에서 아래처럼 바꿉니다. 키는 `.env`에만 두고 커밋하지 않습니다.
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+LLM_PROVIDER=openai-compatible
+LLM_API_KEY=...
+# 서비스별 LLM_BASE_URL과 LLM_MODEL 예시 (모델 이름은 각 서비스 문서에서 확인)
+# OpenAI       LLM_BASE_URL=https://api.openai.com/v1
+# NVIDIA NIM   LLM_BASE_URL=https://integrate.api.nvidia.com/v1
+# Gemini       LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_MODEL=...
 ```
 
-## Deployment
+채팅을 하려면 방에 두 사람이 있고, 두 사람 모두 `PATCH /rooms/{roomId}/participants/me`로 `aiConsent: true`를 보내야 합니다. 아니면 403 `ai_consent_required`를 받습니다.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## API 문서
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+API 문서(OpenAPI 3.1)는 코드에서 만듭니다. 원본은 컨트롤러의 Swagger 데코레이터, `src/contract/components.ts`(스키마), `src/contract/document.ts`(공통 설명)입니다.
 
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-```
+- 서버를 띄우면 `/docs`(Swagger UI), `/docs/openapi.json`, `/docs/openapi.yaml`에서 볼 수 있습니다 (`API_DOCS`).
+- 스키마나 데코레이터를 바꾼 뒤에는 `pnpm --filter api contract:emit`을 실행해 `docs/api/openapi.yaml`, `src/contract/types.gen.ts`, `src/contract/openapi.gen.ts`를 다시 만들고 함께 커밋합니다. 커밋된 파일이 코드와 다르면 단위 테스트가 실패합니다.
+- 요청 본문 검증(Ajv)과 TS 타입도 같은 스키마에서 나옵니다. DTO 클래스는 따로 두지 않습니다.
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## 코드 스타일
 
-## Observability
+- ESM(`"type": "module"`, `module: nodenext`)이라 상대 경로 import에 확장자 `.js`를 붙입니다.
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+  ```ts
+  import { createApp } from './app.js';
+  ```
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- lint: oxlint (`oxlint.json`)
+- format: Prettier (`.prettierrc`: 작은따옴표, trailing comma `all`)
