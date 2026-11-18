@@ -1,17 +1,27 @@
-import { readFile } from 'node:fs/promises';
-import {
-  CONTRACT_PATH,
-  generate,
-  OUTPUTS,
-} from '../../scripts/gen-contract.js';
+import { NestFactory } from '@nestjs/core';
+import { generate, OUTPUTS } from '../../scripts/gen-contract.js';
+import { AppModule } from '../app.module.js';
+import { readConfig } from '../config.js';
 import { InvalidInput } from '../core/input.js';
+import { buildOpenApiDocument } from './document.js';
 import { parseJsonBody } from './index.js';
 
-describe('generated contract', () => {
-  it('matches docs/api/openapi.yaml (run `pnpm --filter api contract:gen` if this fails)', async () => {
-    const fresh = await generate(await readFile(CONTRACT_PATH, 'utf8'));
-    expect(await readFile(OUTPUTS.types, 'utf8')).toBe(fresh.types);
-    expect(await readFile(OUTPUTS.openapi, 'utf8')).toBe(fresh.openapi);
+describe('emitted contract', () => {
+  it('matches the document the code builds (run `pnpm --filter api contract:emit` if this fails)', async () => {
+    const parsed = readConfig({
+      DATABASE_URL: 'postgres://unused',
+      THUMB_SIGNING_SECRET: 'x'.repeat(32),
+    });
+    if (!parsed.ok) throw new Error(parsed.problems.join('; '));
+    const app = await NestFactory.create(AppModule.forRoot(parsed.config), {
+      preview: true,
+      logger: false,
+    });
+    const out = await generate(buildOpenApiDocument(app));
+    await app.close();
+    await expect(out.yaml).toMatchFileSnapshot(OUTPUTS.yaml);
+    await expect(out.types).toMatchFileSnapshot(OUTPUTS.types);
+    await expect(out.openapi).toMatchFileSnapshot(OUTPUTS.openapi);
   });
 });
 
@@ -26,7 +36,7 @@ describe('parseJsonBody', () => {
     }
   };
 
-  it('accepts a body the YAML allows', () => {
+  it('accepts a body the contract allows', () => {
     expect(
       issuesOf({ name: '우리', nickname: '서연', metOn: '2024-03-02' }),
     ).toEqual([]);
