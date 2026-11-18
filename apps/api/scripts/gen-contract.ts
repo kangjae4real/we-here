@@ -24,7 +24,7 @@ export async function generate(
   const doc = structuredClone(document) as JsonObject;
   const types = `// ${NOTICE}\n` + astToString(await openapiTS(doc as never));
   return {
-    yaml: `# ${NOTICE}\n${stringify(doc, { lineWidth: 0 })}`,
+    yaml: `# ${NOTICE}\n${stringify(doc, { lineWidth: 0, version: '1.1' })}`,
     types: await pretty(types, OUTPUTS.types),
     openapi: await pretty(emitOpenapi(doc), OUTPUTS.openapi),
   };

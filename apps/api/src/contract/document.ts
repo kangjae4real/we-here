@@ -7,7 +7,7 @@ import {
 } from '@nestjs/swagger';
 import { PARAMETERS, RESPONSES, SCHEMAS } from './components.js';
 
-const DESCRIPTION = `NestJS(\`apps/api\`) 구현 전에 합의하기 위한 **설계 우선(design-first) 계약 초안**이다.
+const DESCRIPTION = `we-here NestJS(\`apps/api\`) API 계약이다. 이 문서는 코드(컨트롤러 데코레이터, \`src/contract/components.ts\`, \`src/contract/document.ts\`)에서 생성된다. 서버를 띄우면 \`/docs\`에서 Swagger UI로 볼 수 있다.
 
 **근거 자료**
 - Figma Make 프로토타입 "두 사람의 스친 순간 찾기" (화면 01~10, 상태 S1~S8)
@@ -80,7 +80,7 @@ function documentConfig(): Omit<OpenAPIObject, 'paths'> {
       title: base.info.title,
       version: base.info.version,
       summary:
-        "두 사람의 사진 위치로 '스친 순간'을 찾는 we-here의 NestJS API 계약 초안",
+        "두 사람의 사진 위치로 '스친 순간'을 찾는 we-here의 NestJS API",
       description: base.info.description,
     },
     components: {
