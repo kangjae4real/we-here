@@ -12,10 +12,15 @@
 
 ### 1. 요구 사항
 
-- **Node.js 24 이상** (루트 `package.json`의 `engines.node`)
+- **Node.js 24.22.3** (루트 `.node-version`). 최소 버전은 24.15.0입니다(루트 `package.json`의 `engines.node`).
 - **pnpm 11.25.0** (루트 `package.json`의 `packageManager`)
 
-`pnpm-workspace.yaml`에 `engineStrict: true`가 있어서 Node 24 미만에서는 `pnpm install`이 실패합니다. 버전 관리자(fnm, nvm, mise 등)는 루트의 `.node-version`을 읽어 Node 24를 고릅니다.
+`pnpm-workspace.yaml`에 `engineStrict: true`가 있어서 Node 24.15.0 미만에서는 `pnpm install`이 실패합니다(api의 `@nestjs/schematics`가 `^24.15.0`을 요구). 버전 관리자(fnm, nvm, mise 등)는 루트의 `.node-version`을 읽습니다. `Dockerfile`과 CI도 같은 버전을 쓰므로, 로컬과 컨테이너에 같은 의존성이 설치됩니다.
+
+```bash
+fnm use --install-if-missing          # fnm, mise는 .node-version을 바로 읽음
+nvm install "$(cat .node-version)"    # nvm은 .nvmrc만 읽으므로 버전을 넘김
+```
 
 Node 24에 포함된 corepack을 켜두면, 저장소 안에서 `pnpm`을 실행할 때 `packageManager`에 적힌 버전이 자동으로 사용됩니다.
 
@@ -47,34 +52,46 @@ pnpm dev
 
 Turborepo의 터미널 UI에서 세 서버의 로그가 각각 따로 표시됩니다. `Ctrl+C`를 누르면 모두 종료됩니다. Storybook은 시작할 때 브라우저 탭을 자동으로 엽니다.
 
-api는 Postgres와 `apps/api/.env`가 있어야 뜹니다. Postgres는 `docker compose up -d db`로 띄우고(접속 주소 `postgres://postgres:postgres@localhost:5432/wehere`), `.env`는 [`apps/api/README.md`](apps/api/README.md#실행)를 보고 준비합니다.
+api는 Postgres와 `apps/api/.env`가 있어야 뜹니다. Postgres는 `docker compose -f compose.dev.yaml up -d db`로 띄우고(접속 주소 `postgres://postgres:postgres@localhost:5432/wehere`), `.env`는 [`apps/api/README.md`](apps/api/README.md#실행)를 보고 준비합니다. web만 띄울 때는 `pnpm --filter web dev`면 되고 Postgres가 필요 없습니다.
 
 ## Docker 환경
 
-`Dockerfile`과 `compose.yaml`로 web과 api를 프로덕션 이미지로 빌드해서 Postgres와 함께 실행합니다. 클라우드 인스턴스에도 같은 파일을 그대로 사용합니다. Docker가 필요합니다.
+compose 파일은 환경별로 나뉩니다. 둘 다 같은 `Dockerfile`과 `pnpm-lock.yaml`을 쓰고, Docker가 필요합니다.
+
+| 파일 | 프로젝트 이름 | 띄우는 것 |
+|---|---|---|
+| `compose.dev.yaml` | `we-here-dev` | Postgres, api(`nest start --watch`), web(`next dev`). 소스를 bind mount해서 바꾸면 바로 반영 |
+| `compose.prod.yaml` | `we-here` | Postgres, api·web 프로덕션 이미지. 클라우드 인스턴스에도 그대로 사용 |
+
+두 환경은 같은 포트(3000, 4000, 5432)를 쓰므로 한 번에 하나만 띄웁니다. 네이버 지도 키에 `localhost:3000`만 등록되어 있어서 포트를 바꾸지 않았습니다. 프로젝트 이름이 달라서 DB 볼륨도 환경마다 따로 생깁니다.
+
+### 개발 환경
+
+```bash
+docker compose -f compose.dev.yaml up -d          # http://localhost:3000, http://localhost:4000
+docker compose -f compose.dev.yaml logs -f web api
+docker compose -f compose.dev.yaml down
+```
+
+- **의존성 설치:** `up`을 할 때마다 `deps` 서비스가 `pnpm install --frozen-lockfile`을 한 번 실행하고 끝납니다. api와 web은 그다음에 뜹니다.
+- **node_modules와 `.next`:** 컨테이너 볼륨에 따로 두어서, 호스트의 macOS용 바이너리와 섞이지 않습니다.
+- **의존성 추가:** 호스트에서 `pnpm --filter web add <패키지>`로 추가합니다. `package.json`과 `pnpm-lock.yaml`이 바뀌고, 다음 `up` 때 컨테이너에도 같은 버전이 깔립니다. 컨테이너 안에서만 설치한 의존성은 로컬 실행에서 빠지므로 만들지 않습니다.
+- **api 설정:** `apps/api/.env.example`을 기본값으로 쓰고, `apps/api/.env`가 있으면 그 값이 이깁니다. `DATABASE_URL`만 컨테이너 안의 `db`를 가리키도록 바꿔 둡니다.
+- **Postgres만 필요할 때:** `docker compose -f compose.dev.yaml up -d db`로 띄운 뒤 api와 web은 호스트에서 `pnpm dev`로 띄웁니다.
+- **컨테이너 안에서 검사:** `docker compose -f compose.dev.yaml exec web sh -c 'cd apps/web && node_modules/.bin/tsc --noEmit -p .'`
 
 ### 프로덕션 이미지로 실행
 
 ```bash
-docker compose --profile app up -d --build
+docker compose -f compose.prod.yaml up -d --build
 curl http://localhost:4000/health   # {"status":"ok","checks":{"db":"ok"}}
 open http://localhost:3000
-docker compose --profile app down
+docker compose -f compose.prod.yaml down
 ```
 
-`--profile app` 없이 `docker compose up -d`만 실행하면 Postgres만 뜹니다. 네이버 지도 키는 빌드할 때 이미지에 들어가므로 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID=... docker compose --profile app up -d --build`처럼 빌드 명령에 넘깁니다.
+네이버 지도 키는 빌드할 때 이미지에 들어가므로 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID=... docker compose -f compose.prod.yaml up -d --build`처럼 빌드 명령에 넘깁니다. 프로젝트 이름은 예전 `compose.yaml`과 같은 `we-here`라서, 그 파일로 띄운 서버의 DB 볼륨을 그대로 씁니다.
 
 처음 빌드할 때는 의존성을 모두 내려받느라 몇 분 걸립니다. 이후에는 BuildKit 캐시를 재사용해서 `pnpm-lock.yaml`이 바뀌지 않으면 의존성 설치를 건너뜁니다.
-
-### web 개발 서버를 컨테이너에서 실행
-
-```bash
-docker compose --profile dev up -d web-dev   # http://localhost:3000, 소스 변경 시 바로 반영
-docker compose exec web-dev sh -c 'cd apps/web && node_modules/.bin/tsc --noEmit -p .'
-docker compose --profile dev down
-```
-
-소스는 bind mount로 연결되고 `node_modules`와 `.next`는 컨테이너 볼륨에 따로 둡니다. 그래서 호스트의 macOS용 바이너리와 섞이지 않습니다. 의존성을 추가할 때도 `docker compose exec web-dev pnpm --filter web add <패키지> --store-dir /pnpm-store`처럼 컨테이너 안에서 실행합니다. `web-dev`와 `web`(`--profile app`)은 둘 다 3000번 포트를 쓰므로 동시에 띄울 수 없습니다. 네이버 지도 키에 `localhost:3000`만 등록되어 있어서 포트를 바꾸지 않았습니다.
 
 ## 디렉토리 구조
 
@@ -230,7 +247,7 @@ shadcn CLI는 세미콜론 없이 코드를 생성하기 때문에 Biome 포맷�
 
 ## 브랜치와 커밋
 
-- PR과 `develop`/`main` push마다 GitHub Actions(`.github/workflows/ci.yml`)가 Node 24에서 `pnpm lint`, api 단위·e2e 테스트, `docker compose --profile app build`를 실행합니다.
+- PR과 `develop`/`main` push마다 GitHub Actions(`.github/workflows/ci.yml`)가 `.node-version`의 Node에서 `pnpm lint`, api 단위·e2e 테스트, `docker compose -f compose.prod.yaml build`를 실행합니다.
 - 작업 브랜치는 `develop`에서 만들고, PR도 `develop`으로 올립니다.
 - 커밋 메시지는 `chore: ...`, `docs: ...` 같은 Conventional Commits 형식을 따릅니다.
 
