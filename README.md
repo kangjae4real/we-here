@@ -5,7 +5,7 @@
 | 영역 | 스택 |
 |---|---|
 | 모노레포 | pnpm 11 workspace, Turborepo 2.11 |
-| `apps/web` | Next.js 16 (App Router, Turbopack, React Compiler), React 19, Tailwind CSS v4, shadcn/ui (Base UI), Storybook 10, Biome |
+| `apps/web` | Next.js 16 (App Router, Turbopack, React Compiler), React 19, Tailwind CSS v4, shadcn/ui (Base UI), Motion, Storybook 10, Biome |
 | `apps/api` | NestJS 12 (ESM), Vitest, oxlint, Prettier |
 
 ## 시작하기
@@ -87,6 +87,7 @@ we-here/
 │   │   ├── src/
 │   │   │   ├── app/              # App Router (layout, page, globals.css, fonts.ts)
 │   │   │   ├── components/ui/    # shadcn/ui 컴포넌트 + story
+│   │   │   ├── features/         # 화면 기능: entry(첫 화면·방 만들기·참여), room(방 화면), ui(공용 UI·motion 프리셋)
 │   │   │   └── lib/utils.ts      # cn() 유틸
 │   │   ├── biome.json            # lint/format 설정
 │   │   ├── components.json       # shadcn/ui CLI 설정
@@ -182,7 +183,8 @@ pnpm --filter api test
 - **`next.config.ts`**: `cacheComponents`, `partialPrefetching`, `reactCompiler`를 켜두었습니다. CSS는 Turbopack 로더인 `@tailwindcss/turbopack`이 처리하므로 PostCSS 설정 파일이 없습니다.
 - **경로 별칭**: `@/*`는 `src/*`를 가리킵니다 (`tsconfig.json`).
 - **폰트**: `src/app/fonts.ts`에서 `next/font`로 Geist(`--font-sans`)와 Geist Mono(`--font-geist-mono`)를 정의합니다. `layout.tsx`와 Storybook이 이 파일을 함께 import하므로, 폰트를 바꿀 때는 여기만 수정하면 됩니다.
-- **테마**: `src/app/globals.css`에 shadcn/ui 색상 토큰(라이트 `:root`, 다크 `.dark`)이 있습니다. 다크 모드는 `<html>`에 `dark` 클래스가 붙으면 적용됩니다.
+- **테마**: `src/app/globals.css`에 shadcn/ui 색상 토큰(라이트 `:root`, 다크 `.dark`)이 있습니다. 다크 모드는 `<html>`에 `dark` 클래스가 붙으면 적용됩니다. `@theme inline`에는 we-here 디자인 토큰(`--color-bg`, `--color-ink`, `--color-sub`, `--color-butter`, 참여자 색 `--color-a`·`--color-b`, 히트맵 `--color-heat-1~3` 등)이 있어서 `bg-bg`, `text-sub`, `bg-a`처럼 Tailwind 유틸리티로 씁니다. 라이트 `:root`의 shadcn/ui 토큰도 같은 팔레트로 맞춰 두었고, 숫자 폭을 맞출 때는 `tnum` 유틸리티를 씁니다.
+- **애니메이션**: `motion` 패키지를 씁니다. 공용 프리셋(`spring`, `press` 등)은 `src/features/ui/motion.ts`에 모여 있고, `layout.tsx`의 `MotionProvider`가 OS의 동작 줄이기 설정을 모든 motion 컴포넌트에 적용합니다(`reducedMotion="user"`).
 - **lint/format**: Biome을 사용합니다 (`biome.json`).
 
 ### shadcn/ui
