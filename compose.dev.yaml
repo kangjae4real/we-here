@@ -1,0 +1,75 @@
+# Development: Postgres + api (watch) + web (hot reload), source bind-mounted.
+#   docker compose -f compose.dev.yaml up -d        # everything
+#   docker compose -f compose.dev.yaml up -d db     # Postgres only, for `pnpm dev` on the host
+# Dependencies come from the same pnpm-lock.yaml as a host `pnpm install`; the container only
+# keeps its own node_modules volumes so its Linux binaries never mix with the host's.
+name: we-here-dev
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: wehere
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wehere"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # Installs the lockfile once into the shared node_modules volumes, then exits; api and web start after it.
+  deps:
+    build: &node-build
+      context: .
+      target: base
+    command: pnpm install --frozen-lockfile --store-dir /pnpm-store --config.confirmModulesPurge=false
+    volumes: &node-volumes
+      - .:/repo
+      - root-modules:/repo/node_modules
+      - web-modules:/repo/apps/web/node_modules
+      - api-modules:/repo/apps/api/node_modules
+      - web-next:/repo/apps/web/.next
+      - pnpm-store:/pnpm-store
+
+  api:
+    build: *node-build
+    command: pnpm --filter api dev
+    volumes: *node-volumes
+    # .env.example holds working dev defaults; apps/api/.env (optional) overrides them, as on the host.
+    env_file:
+      - apps/api/.env.example
+      - path: apps/api/.env
+        required: false
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/wehere
+    ports:
+      - "4000:4000"
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+
+  web:
+    build: *node-build
+    command: pnpm --filter web dev -H 0.0.0.0
+    volumes: *node-volumes
+    # All interfaces so a phone on the same Wi-Fi can open it; the Naver map key only allows localhost:3000.
+    ports:
+      - "3000:3000"
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:
+  root-modules:
+  web-modules:
+  api-modules:
+  web-next:
+  pnpm-store:

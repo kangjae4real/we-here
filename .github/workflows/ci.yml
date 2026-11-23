@@ -39,4 +39,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - run: docker compose --profile app build
+      - run: docker compose -f compose.prod.yaml build

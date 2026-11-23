@@ -1,3 +1,8 @@
+# Production images: Postgres + api + web, built from the Dockerfile's api and web targets.
+#   docker compose -f compose.prod.yaml up -d --build
+# The project keeps the name `we-here` so a server started with the old compose.yaml keeps its db-data volume.
+name: we-here
+
 services:
   db:
     image: postgres:16
@@ -14,9 +19,9 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+    restart: unless-stopped
 
   api:
-    profiles: [app]
     build:
       context: .
       target: api
@@ -38,7 +43,6 @@ services:
     restart: unless-stopped
 
   web:
-    profiles: [app]
     build:
       context: .
       target: web

@@ -5,17 +5,22 @@
 | 영역 | 스택 |
 |---|---|
 | 모노레포 | pnpm 11 workspace, Turborepo 2.11 |
-| `apps/web` | Next.js 16 (App Router, Turbopack, React Compiler), React 19, Tailwind CSS v4, shadcn/ui (Base UI), Storybook 10, Biome |
+| `apps/web` | Next.js 16 (App Router, Turbopack, React Compiler), React 19, Tailwind CSS v4, shadcn/ui (Base UI), Motion, Storybook 10, Biome |
 | `apps/api` | NestJS 12 (ESM), Vitest, oxlint, Prettier |
 
 ## 시작하기
 
 ### 1. 요구 사항
 
-- **Node.js 24 이상** (루트 `package.json`의 `engines.node`)
+- **Node.js 24.22.3** (루트 `.node-version`). 최소 버전은 24.15.0입니다(루트 `package.json`의 `engines.node`).
 - **pnpm 11.25.0** (루트 `package.json`의 `packageManager`)
 
-`pnpm-workspace.yaml`에 `engineStrict: true`가 있어서 Node 24 미만에서는 `pnpm install`이 실패합니다. 버전 관리자(fnm, nvm, mise 등)는 루트의 `.node-version`을 읽어 Node 24를 고릅니다.
+`pnpm-workspace.yaml`에 `engineStrict: true`가 있어서 Node 24.15.0 미만에서는 `pnpm install`이 실패합니다(api의 `@nestjs/schematics`가 `^24.15.0`을 요구). 버전 관리자(fnm, nvm, mise 등)는 루트의 `.node-version`을 읽습니다. `Dockerfile`과 CI도 같은 버전을 쓰므로, 로컬과 컨테이너에 같은 의존성이 설치됩니다.
+
+```bash
+fnm use --install-if-missing          # fnm, mise는 .node-version을 바로 읽음
+nvm install "$(cat .node-version)"    # nvm은 .nvmrc만 읽으므로 버전을 넘김
+```
 
 Node 24에 포함된 corepack을 켜두면, 저장소 안에서 `pnpm`을 실행할 때 `packageManager`에 적힌 버전이 자동으로 사용됩니다.
 
@@ -47,22 +52,44 @@ pnpm dev
 
 Turborepo의 터미널 UI에서 세 서버의 로그가 각각 따로 표시됩니다. `Ctrl+C`를 누르면 모두 종료됩니다. Storybook은 시작할 때 브라우저 탭을 자동으로 엽니다.
 
-api는 Postgres와 `apps/api/.env`가 있어야 뜹니다. Postgres는 `docker compose up -d db`로 띄우고(접속 주소 `postgres://postgres:postgres@localhost:5432/wehere`), `.env`는 [`apps/api/README.md`](apps/api/README.md#실행)를 보고 준비합니다.
+api는 Postgres와 `apps/api/.env`가 있어야 뜹니다. Postgres는 `docker compose -f compose.dev.yaml up -d db`로 띄우고(접속 주소 `postgres://postgres:postgres@localhost:5432/wehere`), `.env`는 [`apps/api/README.md`](apps/api/README.md#실행)를 보고 준비합니다. web만 띄울 때는 `pnpm --filter web dev`면 되고 Postgres가 필요 없습니다.
 
 ## Docker 환경
 
-`Dockerfile`과 `compose.yaml`로 web과 api를 프로덕션 이미지로 빌드해서 Postgres와 함께 실행합니다. 클라우드 인스턴스에도 같은 파일을 그대로 사용합니다. Docker가 필요합니다.
+compose 파일은 환경별로 나뉩니다. 둘 다 같은 `Dockerfile`과 `pnpm-lock.yaml`을 쓰고, Docker가 필요합니다.
+
+| 파일 | 프로젝트 이름 | 띄우는 것 |
+|---|---|---|
+| `compose.dev.yaml` | `we-here-dev` | Postgres, api(`nest start --watch`), web(`next dev`). 소스를 bind mount해서 바꾸면 바로 반영 |
+| `compose.prod.yaml` | `we-here` | Postgres, api·web 프로덕션 이미지. 클라우드 인스턴스에도 그대로 사용 |
+
+두 환경은 같은 포트(3000, 4000, 5432)를 쓰므로 한 번에 하나만 띄웁니다. 네이버 지도 키에 `localhost:3000`만 등록되어 있어서 포트를 바꾸지 않았습니다. 프로젝트 이름이 달라서 DB 볼륨도 환경마다 따로 생깁니다.
+
+### 개발 환경
+
+```bash
+docker compose -f compose.dev.yaml up -d          # http://localhost:3000, http://localhost:4000
+docker compose -f compose.dev.yaml logs -f web api
+docker compose -f compose.dev.yaml down
+```
+
+- **의존성 설치:** `up`을 할 때마다 `deps` 서비스가 `pnpm install --frozen-lockfile`을 한 번 실행하고 끝납니다. api와 web은 그다음에 뜹니다.
+- **node_modules와 `.next`:** 컨테이너 볼륨에 따로 두어서, 호스트의 macOS용 바이너리와 섞이지 않습니다.
+- **의존성 추가:** 호스트에서 `pnpm --filter web add <패키지>`로 추가합니다. `package.json`과 `pnpm-lock.yaml`이 바뀌고, 다음 `up` 때 컨테이너에도 같은 버전이 깔립니다. 컨테이너 안에서만 설치한 의존성은 로컬 실행에서 빠지므로 만들지 않습니다.
+- **api 설정:** `apps/api/.env.example`을 기본값으로 쓰고, `apps/api/.env`가 있으면 그 값이 이깁니다. `DATABASE_URL`만 컨테이너 안의 `db`를 가리키도록 바꿔 둡니다.
+- **Postgres만 필요할 때:** `docker compose -f compose.dev.yaml up -d db`로 띄운 뒤 api와 web은 호스트에서 `pnpm dev`로 띄웁니다.
+- **컨테이너 안에서 검사:** `docker compose -f compose.dev.yaml exec web sh -c 'cd apps/web && node_modules/.bin/tsc --noEmit -p .'`
 
 ### 프로덕션 이미지로 실행
 
 ```bash
-docker compose --profile app up -d --build
+docker compose -f compose.prod.yaml up -d --build
 curl http://localhost:4000/health   # {"status":"ok","checks":{"db":"ok"}}
 open http://localhost:3000
-docker compose --profile app down
+docker compose -f compose.prod.yaml down
 ```
 
-`--profile app` 없이 `docker compose up -d`만 실행하면 Postgres만 뜹니다. 네이버 지도 키는 빌드할 때 이미지에 들어가므로 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID=... docker compose --profile app up -d --build`처럼 빌드 명령에 넘깁니다.
+네이버 지도 키는 빌드할 때 이미지에 들어가므로 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID=... docker compose -f compose.prod.yaml up -d --build`처럼 빌드 명령에 넘깁니다. 프로젝트 이름은 예전 `compose.yaml`과 같은 `we-here`라서, 그 파일로 띄운 서버의 DB 볼륨을 그대로 씁니다.
 
 처음 빌드할 때는 의존성을 모두 내려받느라 몇 분 걸립니다. 이후에는 BuildKit 캐시를 재사용해서 `pnpm-lock.yaml`이 바뀌지 않으면 의존성 설치를 건너뜁니다.
 
@@ -77,6 +104,7 @@ we-here/
 │   │   ├── src/
 │   │   │   ├── app/              # App Router (layout, page, globals.css, fonts.ts)
 │   │   │   ├── components/ui/    # shadcn/ui 컴포넌트 + story
+│   │   │   ├── features/         # 화면 기능: entry(첫 화면·방 만들기·참여), room(방 화면), ui(공용 UI·motion 프리셋)
 │   │   │   └── lib/utils.ts      # cn() 유틸
 │   │   ├── biome.json            # lint/format 설정
 │   │   ├── components.json       # shadcn/ui CLI 설정
@@ -172,7 +200,8 @@ pnpm --filter api test
 - **`next.config.ts`**: `cacheComponents`, `partialPrefetching`, `reactCompiler`를 켜두었습니다. CSS는 Turbopack 로더인 `@tailwindcss/turbopack`이 처리하므로 PostCSS 설정 파일이 없습니다.
 - **경로 별칭**: `@/*`는 `src/*`를 가리킵니다 (`tsconfig.json`).
 - **폰트**: `src/app/fonts.ts`에서 `next/font`로 Geist(`--font-sans`)와 Geist Mono(`--font-geist-mono`)를 정의합니다. `layout.tsx`와 Storybook이 이 파일을 함께 import하므로, 폰트를 바꿀 때는 여기만 수정하면 됩니다.
-- **테마**: `src/app/globals.css`에 shadcn/ui 색상 토큰(라이트 `:root`, 다크 `.dark`)이 있습니다. 다크 모드는 `<html>`에 `dark` 클래스가 붙으면 적용됩니다.
+- **테마**: `src/app/globals.css`에 shadcn/ui 색상 토큰(라이트 `:root`, 다크 `.dark`)이 있습니다. 다크 모드는 `<html>`에 `dark` 클래스가 붙으면 적용됩니다. `@theme inline`에는 we-here 디자인 토큰(`--color-bg`, `--color-ink`, `--color-sub`, `--color-butter`, 참여자 색 `--color-a`·`--color-b`, 히트맵 `--color-heat-1~3` 등)이 있어서 `bg-bg`, `text-sub`, `bg-a`처럼 Tailwind 유틸리티로 씁니다. 라이트 `:root`의 shadcn/ui 토큰도 같은 팔레트로 맞춰 두었고, 숫자 폭을 맞출 때는 `tnum` 유틸리티를 씁니다.
+- **애니메이션**: `motion` 패키지를 씁니다. 공용 프리셋(`spring`, `press` 등)은 `src/features/ui/motion.ts`에 모여 있고, `layout.tsx`의 `MotionProvider`가 OS의 동작 줄이기 설정을 모든 motion 컴포넌트에 적용합니다(`reducedMotion="user"`).
 - **lint/format**: Biome을 사용합니다 (`biome.json`).
 
 ### shadcn/ui
@@ -218,7 +247,7 @@ shadcn CLI는 세미콜론 없이 코드를 생성하기 때문에 Biome 포맷�
 
 ## 브랜치와 커밋
 
-- PR과 `develop`/`main` push마다 GitHub Actions(`.github/workflows/ci.yml`)가 Node 24에서 `pnpm lint`, api 단위·e2e 테스트, `docker compose --profile app build`를 실행합니다.
+- PR과 `develop`/`main` push마다 GitHub Actions(`.github/workflows/ci.yml`)가 `.node-version`의 Node에서 `pnpm lint`, api 단위·e2e 테스트, `docker compose -f compose.prod.yaml build`를 실행합니다.
 - 작업 브랜치는 `develop`에서 만들고, PR도 `develop`으로 올립니다.
 - 커밋 메시지는 `chore: ...`, `docs: ...` 같은 Conventional Commits 형식을 따릅니다.
 

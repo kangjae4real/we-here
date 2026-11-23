@@ -6,7 +6,7 @@ export default function RoomPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex h-dvh items-center justify-center bg-muted text-sm text-muted-foreground">
+        <div className="flex h-dvh items-center justify-center bg-land text-[14px] font-medium text-sub">
           방을 여는 중…
         </div>
       }

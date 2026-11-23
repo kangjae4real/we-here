@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1
-FROM node:24-bookworm-slim AS base
+# Same Node as .node-version (local installs and CI read that file); change both together.
+ARG NODE_VERSION=24.22.3
+
+FROM node:${NODE_VERSION}-bookworm-slim AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /repo
@@ -22,7 +25,7 @@ ARG NEXT_PUBLIC_NAVER_MAP_CLIENT_ID=""
 ENV NEXT_PUBLIC_NAVER_MAP_CLIENT_ID=$NEXT_PUBLIC_NAVER_MAP_CLIENT_ID
 RUN pnpm --filter web build
 
-FROM node:24-bookworm-slim AS api
+FROM node:${NODE_VERSION}-bookworm-slim AS api
 ENV NODE_ENV=production PORT=4000
 WORKDIR /app
 COPY --from=api-build --chown=node:node /out ./
@@ -31,7 +34,7 @@ USER node
 EXPOSE 4000
 CMD ["node", "dist/main.js"]
 
-FROM node:24-bookworm-slim AS web
+FROM node:${NODE_VERSION}-bookworm-slim AS web
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
 WORKDIR /app
 COPY --from=web-build --chown=node:node /repo/apps/web/.next/standalone ./

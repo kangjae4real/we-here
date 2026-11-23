@@ -1,416 +1,303 @@
 "use client";
 
-import { cn } from "cn";
+import { useReducedMotion } from "motion/react";
 import type * as React from "react";
-import { Component, useEffect, useRef, useState } from "react";
 import {
-  Circle,
+  Component,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import {
   Container,
-  Marker,
   NaverMap,
   NavermapsProvider,
   useMap,
   useNavermaps,
 } from "react-naver-maps";
+import type { MapInset, MapScene } from "./contract";
 import {
-  type HeatCell,
-  type LatLng,
-  MAP_LABELS,
-  type PhotoPoint,
-  type Who,
-} from "./mock";
+  frame,
+  fromWorld,
+  ORIGIN_LL,
+  quantize,
+  setVars,
+  toWorld,
+} from "./map/geo";
+import { Overlay } from "./map/Overlay";
+import { PlaceholderMap } from "./map/Placeholder";
+import type { Room } from "./mock";
 
 // The Maps JS API needs only the client ID. The client secret is for server-side
 // REST calls and must not reach the browser bundle.
 const CLIENT_ID = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
 
-type MapProps = {
-  points: PhotoPoint[];
-  highlight: { a: LatLng; b: LatLng } | null;
-  heat: HeatCell[] | null;
-};
+type MapProps = { room: Room; scene: MapScene; inset: MapInset };
 
 export function MapCanvas(props: MapProps) {
+  const naver = useNaverScript(CLIENT_ID);
   if (!CLIENT_ID) return <PlaceholderMap {...props} />;
+  const failed = (
+    <PlaceholderMap {...props} note="네이버 지도를 불러오지 못했어요" />
+  );
+  // The boundary stays mounted in every state: an auth failure tears the live map
+  // down, and whatever Naver throws on the way out must land here, not crash the page.
   return (
-    <MapErrorBoundary
-      fallback={
-        <PlaceholderMap {...props} note="네이버 지도를 불러오지 못했어요" />
-      }
-    >
-      <NaverMapCanvas clientId={CLIENT_ID} {...props} />
+    <MapErrorBoundary fallback={failed}>
+      {naver === "ready" ? (
+        <NaverCanvas clientId={CLIENT_ID} {...props} />
+      ) : naver === "failed" ? (
+        failed
+      ) : (
+        <div className="absolute inset-0 bg-land" />
+      )}
     </MapErrorBoundary>
   );
 }
 
-export function ParticipantMark({
-  who,
-  className,
-  style,
-}: {
-  who: Who;
-  className?: string;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <span
-      aria-hidden
-      style={style}
-      className={cn(
-        "inline-block shrink-0 border-2 border-white shadow-sm",
-        who === "a"
-          ? "size-3 rounded-full bg-participant-a"
-          : "size-2.5 rotate-45 bg-participant-b",
-        className,
-      )}
-    />
-  );
+// ---------------------------------------------------------------------------
+// Script loading. react-naver-maps drops its cached promise when maps.js fails and
+// retries on every render, which appends <script> tags forever when the script is
+// blocked. Load it once here instead: never retry, give up after a timeout (a blocked
+// maps-gl.js never fires onJSContentLoaded), and treat Naver's auth-failure callback
+// (wrong key, unregistered domain) as a failure too. The library then finds
+// naver.maps already loaded and never adds a script of its own.
+
+type NaverStatus = "loading" | "ready" | "failed";
+let naverStatus: NaverStatus = "loading";
+let naverStarted = false;
+const naverListeners = new Set<() => void>();
+// Generous: maps.js plus the GL submodule on a slow phone connection.
+const NAVER_TIMEOUT_MS = 15_000;
+
+function setNaverStatus(next: NaverStatus) {
+  if (naverStatus === "failed") return;
+  naverStatus = next;
+  for (const listener of naverListeners) listener();
 }
 
-/** Screen edges the floating UI covers, so the map fits points into the rest. */
-function freeArea(w: number) {
-  return {
-    top: 96,
-    right: w >= 768 ? 24 : 44,
-    bottom: w < 768 ? 140 : 32,
-    left: w >= 1024 ? 432 : w >= 768 ? 352 : 44,
+function startNaver(clientId: string) {
+  if (naverStarted) return;
+  naverStarted = true;
+  const timer = setTimeout(() => setNaverStatus("failed"), NAVER_TIMEOUT_MS);
+  const ready = () => {
+    clearTimeout(timer);
+    setNaverStatus("ready");
   };
+  (window as { navermap_authFailure?: () => void }).navermap_authFailure = () =>
+    setNaverStatus("failed");
+  const script = document.createElement("script");
+  script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(clientId)}&submodules=gl`;
+  script.async = true;
+  script.onerror = () => setNaverStatus("failed");
+  script.onload = () => {
+    const maps = typeof naver === "undefined" ? undefined : naver.maps;
+    if (!maps) setNaverStatus("failed");
+    else if (maps.jsContentLoaded) ready();
+    else (maps as { onJSContentLoaded?: () => void }).onJSContentLoaded = ready;
+  };
+  document.head.append(script);
 }
 
-// ---------------------------------------------------------------------------
-// Placeholder map: used when NEXT_PUBLIC_NAVER_MAP_CLIENT_ID is not set or the
-// Naver script fails to load.
-
-const LNG_SCALE = Math.cos((37.55 * Math.PI) / 180);
-const HAN_RIVER: [number, number][] = [
-  [37.566, 126.86],
-  [37.556, 126.89],
-  [37.54, 126.915],
-  [37.533, 126.935],
-  [37.522, 126.96],
-  [37.515, 126.985],
-  [37.52, 127.01],
-  [37.528, 127.03],
-  [37.538, 127.06],
-  [37.535, 127.085],
-  [37.525, 127.11],
-];
-
-/** Fits `bounds` into the part of the screen the floating UI leaves free. */
-function fit(bounds: LatLng[], w: number, h: number) {
-  const xs = bounds.map((p) => p.lng * LNG_SCALE);
-  const ys = bounds.map((p) => -p.lat);
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  const spanX = Math.max(...xs) - minX;
-  const spanY = Math.max(...ys) - minY;
-  const { top, right, bottom, left } = freeArea(w);
-  const freeW = w - left - right;
-  const freeH = h - top - bottom;
-  const s = Math.min(freeW / spanX, freeH / spanY);
-  const ox = left + (freeW - spanX * s) / 2;
-  const oy = top + (freeH - spanY * s) / 2;
-  return (p: LatLng) => ({
-    x: ox + (p.lng * LNG_SCALE - minX) * s,
-    y: oy + (-p.lat - minY) * s,
-  });
-}
-
-function PlaceholderMap({
-  points,
-  highlight,
-  heat,
-  note = "네이버 지도 키 없음",
-}: MapProps & { note?: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setSize({ w: entry.contentRect.width, h: entry.contentRect.height }),
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  // Zoom to the selected pair like the real map would (D6), else show everything.
-  const bounds = highlight
-    ? [
-        highlight.a,
-        highlight.b,
-        {
-          lat: (highlight.a.lat + highlight.b.lat) / 2 - 0.004,
-          lng: (highlight.a.lng + highlight.b.lng) / 2 - 0.006,
-        },
-        {
-          lat: (highlight.a.lat + highlight.b.lat) / 2 + 0.004,
-          lng: (highlight.a.lng + highlight.b.lng) / 2 + 0.006,
-        },
-      ]
-    : points;
-  const project = size.w > 0 ? fit(bounds, size.w, size.h) : null;
-  const pa = highlight && project ? project(highlight.a) : null;
-  const pb = highlight && project ? project(highlight.b) : null;
-
-  return (
-    <div
-      ref={ref}
-      role="img"
-      aria-label="두 사람의 사진 위치 지도 미리보기"
-      className="absolute inset-0 overflow-hidden bg-muted"
-      style={{
-        backgroundImage:
-          "linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)",
-        backgroundSize: "56px 56px",
-      }}
-    >
-      {project && (
-        <>
-          <svg
-            className="absolute inset-0"
-            width={size.w}
-            height={size.h}
-            aria-hidden="true"
-          >
-            <polyline
-              points={HAN_RIVER.map(([lat, lng]) => {
-                const p = project({ lat, lng });
-                return `${p.x},${p.y}`;
-              }).join(" ")}
-              fill="none"
-              strokeWidth={highlight ? 120 : 16}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="stroke-sky-200/70"
-            />
-            {heat?.map((cell) => {
-              const p = project(cell);
-              return (
-                <circle
-                  key={cell.place}
-                  cx={p.x}
-                  cy={p.y}
-                  r={(6 + cell.days * 1.6) * (size.w < 768 ? 1 : 1.5)}
-                  fill="var(--heatmap)"
-                  fillOpacity={0.12 + (cell.days / 14) * 0.45}
-                />
-              );
-            })}
-            {pa && pb && (
-              <circle
-                cx={(pa.x + pb.x) / 2}
-                cy={(pa.y + pb.y) / 2}
-                r={Math.hypot(pa.x - pb.x, pa.y - pb.y) / 2}
-                fill="var(--foreground)"
-                fillOpacity={0.04}
-                stroke="var(--foreground)"
-                strokeWidth={2}
-                strokeDasharray="6 5"
-              />
-            )}
-          </svg>
-
-          {MAP_LABELS.map((label) => {
-            const p = project(label);
-            return (
-              <span
-                key={label.name}
-                aria-hidden
-                className="absolute -translate-x-1/2 translate-y-2 text-[11px] font-medium whitespace-nowrap text-muted-foreground"
-                style={{ left: p.x, top: p.y }}
-              >
-                {label.name}
-              </span>
-            );
-          })}
-
-          {!heat &&
-            points.map((point) => {
-              const p = project(point);
-              return (
-                <ParticipantMark
-                  key={point.id}
-                  who={point.who}
-                  className={cn(
-                    "absolute -translate-1/2",
-                    highlight && "opacity-30",
-                  )}
-                  style={{ left: p.x, top: p.y }}
-                />
-              );
-            })}
-
-          {pa && pb && (
-            <>
-              <ParticipantMark
-                who="a"
-                className="absolute size-4 -translate-1/2 ring-2 ring-participant-a/30"
-                style={{ left: pa.x, top: pa.y }}
-              />
-              <ParticipantMark
-                who="b"
-                className="absolute size-3.5 -translate-1/2 ring-2 ring-participant-b/30"
-                style={{ left: pb.x, top: pb.y }}
-              />
-            </>
-          )}
-        </>
-      )}
-
-      <span className="absolute right-4 bottom-36 rounded-full bg-background/90 px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm md:bottom-4">
-        지도 미리보기 · {note}
-      </span>
-    </div>
+function useNaverScript(clientId: string | undefined): NaverStatus {
+  return useSyncExternalStore(
+    (onChange) => {
+      if (clientId) startNaver(clientId);
+      naverListeners.add(onChange);
+      return () => naverListeners.delete(onChange);
+    },
+    () => naverStatus,
+    () => "loading",
   );
 }
 
-// ---------------------------------------------------------------------------
-// Naver Maps JS v3 through react-naver-maps.
-
+/** Catches what still breaks after the script loaded, such as the map failing to start. */
 class MapErrorBoundary extends Component<
   { fallback: React.ReactNode; children: React.ReactNode },
-  { failed: boolean }
+  { error: unknown }
 > {
-  state = { failed: false };
+  state = { error: null as unknown };
 
-  static getDerivedStateFromError() {
-    return { failed: true };
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
   }
 
   render() {
-    return this.state.failed ? this.props.fallback : this.props.children;
+    const { error } = this.state;
+    if (!error) return this.props.children;
+    // Only the library's loader errors, an error from Naver's own script, or fallout
+    // from a map Naver already gave up on fall back; anything else is a bug and must
+    // surface, not pose as "no map".
+    if (
+      naverStatus === "failed" ||
+      (error instanceof Error &&
+        (/^Failed to load naver maps script$|^naver\.maps not available/.test(
+          error.message,
+        ) ||
+          error.stack?.includes("map.naver.com")))
+    )
+      return this.props.fallback;
+    throw error;
   }
 }
 
-function markerIcon(who: Who, size: number, opacity = 1): naver.maps.HtmlIcon {
-  const shape =
-    who === "a" ? "border-radius:9999px" : "transform:rotate(45deg)";
-  return {
-    content: `<span style="display:block;width:${size}px;height:${size}px;border:2px solid white;${shape};background:var(--participant-${who});opacity:${opacity};box-shadow:0 1px 2px rgb(0 0 0 / .3)"></span>`,
-    anchor: { x: size / 2, y: size / 2 },
-  };
-}
-
-// Module constants so markers keep the same icon object across renders.
-const ICONS = {
-  normal: { a: markerIcon("a", 12), b: markerIcon("b", 10) },
-  dim: { a: markerIcon("a", 12, 0.3), b: markerIcon("b", 10, 0.3) },
-  focus: { a: markerIcon("a", 16), b: markerIcon("b", 14) },
-};
-
-function NaverMapCanvas({
-  clientId,
-  points,
-  highlight,
-  heat,
-}: MapProps & { clientId: string }) {
+function NaverCanvas({ clientId, ...props }: MapProps & { clientId: string }) {
+  // GL: the raster map only zooms in whole steps and reports a morph's end state
+  // up front, so the overlay could not follow it frame by frame.
   return (
-    <NavermapsProvider ncpKeyId={clientId} submodules={["visualization"]}>
-      {/* On mobile the map stops above the 112px sheet so Naver's logo and copyright stay visible. */}
+    <NavermapsProvider ncpKeyId={clientId} submodules={["gl"]}>
       <Container
-        role="application"
+        role="region"
         aria-label="두 사람의 사진 위치 지도"
-        className="inset-0 bg-muted max-md:bottom-28"
+        data-wh-map=""
+        className="inset-0 bg-land"
         // Container sets an inline position: relative, which would beat a class.
         style={{ position: "absolute" }}
       >
-        {(navermaps) => (
-          <NaverMap
-            defaultCenter={{ lat: 37.54, lng: 126.99 }}
-            defaultZoom={12}
-            logoControlOptions={{ position: navermaps.Position.BOTTOM_RIGHT }}
-            mapDataControlOptions={{
-              position: navermaps.Position.BOTTOM_RIGHT,
-            }}
-          >
-            <FitBounds points={points} highlight={highlight} heat={heat} />
-            {heat ? (
-              <HeatLayer cells={heat} />
-            ) : (
-              points.map((p) => (
-                <Marker
-                  key={p.id}
-                  defaultPosition={p}
-                  icon={highlight ? ICONS.dim[p.who] : ICONS.normal[p.who]}
-                />
-              ))
-            )}
-            {highlight && <EncounterCircle a={highlight.a} b={highlight.b} />}
-            {highlight && (
-              <>
-                <Marker
-                  position={highlight.a}
-                  icon={ICONS.focus.a}
-                  zIndex={10}
-                />
-                <Marker
-                  position={highlight.b}
-                  icon={ICONS.focus.b}
-                  zIndex={10}
-                />
-              </>
-            )}
-          </NaverMap>
-        )}
+        <NaverMap
+          gl
+          defaultCenter={ORIGIN_LL}
+          defaultZoom={11}
+          scaleControl={false}
+          zoomControl={false}
+          mapTypeControl={false}
+        >
+          <NaverLayer {...props} />
+        </NaverMap>
       </Container>
     </NavermapsProvider>
   );
 }
 
-/** Zooms to the selected pair (D6), the heat cells, or every photo. */
-function FitBounds({ points, highlight, heat }: MapProps) {
-  const map = useMap();
-  useEffect(() => {
-    const coords = highlight ? [highlight.a, highlight.b] : (heat ?? points);
-    const w = window.innerWidth;
-    const margin = freeArea(w);
-    // The map already ends above the mobile sheet, so drop that part of the margin.
-    if (w < 768) margin.bottom = 28;
-    // fitBounds swaps array items for LatLng objects in place, so pass a copy
-    // or it corrupts the shared points and heat cells.
-    map.fitBounds([...coords], { ...margin, maxZoom: 17 });
-  }, [map, points, highlight, heat]);
-  return null;
-}
+const EAST_LL = { lat: ORIGIN_LL.lat, lng: ORIGIN_LL.lng + 0.01 };
+const EAST_DX = toWorld(EAST_LL).x - toWorld(ORIGIN_LL).x;
 
-function EncounterCircle({ a, b }: { a: LatLng; b: LatLng }) {
-  const color = getComputedStyle(document.documentElement)
-    .getPropertyValue("--foreground")
-    .trim();
-  const radius =
-    Math.hypot(
-      (a.lat - b.lat) * 111_000,
-      (a.lng - b.lng) * 111_000 * LNG_SCALE,
-    ) / 2;
-  return (
-    <Circle
-      center={{ lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 }}
-      radius={radius}
-      strokeColor={color}
-      strokeStyle="dash"
-      strokeWeight={2}
-      fillColor={color}
-      fillOpacity={0.05}
-    />
+/** Screen px of ORIGIN and px per world unit, read from the map itself so GL's zoom scale needs no constant. */
+function measure(map: naver.maps.Map) {
+  const proj = map.getProjection();
+  const o = proj.fromCoordToOffset(
+    new naver.maps.LatLng(ORIGIN_LL.lat, ORIGIN_LL.lng),
   );
+  const e = proj.fromCoordToOffset(
+    new naver.maps.LatLng(EAST_LL.lat, EAST_LL.lng),
+  );
+  // Raster offsets are relative to the tile pane, which moves as the map pans (GL's are
+  // already screen px): shift by where the map's center lands.
+  const c = proj.fromCoordToOffset(map.getCenter());
+  const { width, height } = map.getSize();
+  return {
+    x: o.x + width / 2 - c.x,
+    y: o.y + height / 2 - c.y,
+    k: (e.x - o.x) / EAST_DX,
+  };
 }
 
-function HeatLayer({ cells }: { cells: HeatCell[] }) {
+/** Whole zoom levels only: px per world unit is then a power of two. */
+const snapToRaster = (k: number) => 2 ** Math.floor(Math.log2(k));
+
+function NaverLayer({ room, scene, inset }: MapProps) {
   const navermaps = useNavermaps();
   const map = useMap();
+  const ref = useRef<SVGSVGElement>(null);
+  const placedAt = useRef(Number.NaN);
+  const reduced = useReducedMotion();
+  const [scale, setScale] = useState(0);
+  // log2 of px per world unit at zoom 0: changes once when the GL renderer takes over.
+  const [ratio, setRatio] = useState(Number.NaN);
+  // Without WebGL (or on a blocklisted GPU) Naver silently falls back to raster tiles.
+  const [gl, setGl] = useState(true);
+  const [size, setSize] = useState(() => map.getSize());
+
+  // GL fires bounds_changed on every frame of a drag, pinch or morph; writing three
+  // CSS variables keeps the overlay glued to the map without re-rendering.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Re-cluster once the map settles: remounting the marks mid-flight drops frames.
+    // (GL fires no "idle" after a morph, so settle on a short quiet period instead.)
+    let quiet = 0;
+    const settle = () => setScale(quantize(measure(map).k));
+    const sync = () => {
+      const m = measure(map);
+      setVars(el, m.x, m.y, m.k);
+      setRatio(Math.round(Math.log2(m.k / 2 ** map.getZoom())));
+      setGl(Boolean(map.getOptions("gl")));
+      clearTimeout(quiet);
+      quiet = window.setTimeout(settle, 150);
+    };
+    sync();
+    const listeners = [
+      navermaps.Event.addListener(map, "bounds_changed", sync),
+      // Raster maps don't report every move through bounds_changed; they do go idle.
+      navermaps.Event.addListener(map, "idle", sync),
+      navermaps.Event.addListener(map, "size_changed", () => {
+        sync();
+        setSize(map.getSize());
+      }),
+    ];
+    return () => {
+      clearTimeout(quiet);
+      navermaps.Event.removeListener(listeners);
+    };
+  }, [navermaps, map]);
+
+  // Move only when the framing itself changes, not on every render.
+  const view = frame(
+    room,
+    scene,
+    inset,
+    size.width,
+    size.height,
+    gl ? undefined : snapToRaster,
+  );
+  const cx = Math.round(view.c.x);
+  const cy = Math.round(view.c.y);
+  const k = Number(view.k.toPrecision(4));
+  const cramped = view.cramped;
   useEffect(() => {
-    const layer = new navermaps.visualization.HeatMap({
-      map,
-      radius: 50,
-      opacity: 0.8,
-      data: cells.map(
-        (c) =>
-          new navermaps.visualization.WeightedLocation(c.lat, c.lng, c.days),
-      ),
-    });
-    return () => layer.setMap(null);
-  }, [navermaps, map, cells]);
-  return null;
+    const now = measure(map);
+    if (Number.isNaN(ratio) || !(now.k > 0 && k > 0)) return;
+    if (cramped && placedAt.current === ratio) return;
+    const center = fromWorld({ x: cx, y: cy });
+    const zoom = map.getZoom() + Math.log2(k / now.k);
+    // The GL renderer starts after the map exists and doubles px per zoom level, so
+    // place (not animate) again whenever that scale changes under us. Raster morphs
+    // report their end state up front and the overlay can't follow them: jump there.
+    if (placedAt.current === ratio && gl && !reduced)
+      map.morph(center, zoom, { duration: 900, easing: "easeOutCubic" });
+    else {
+      map.updateBy(center, gl ? zoom : Math.round(zoom));
+      const m = measure(map);
+      if (ref.current) setVars(ref.current, m.x, m.y, m.k);
+      setScale(quantize(m.k));
+    }
+    placedAt.current = ratio;
+  }, [map, cx, cy, k, ratio, gl, cramped, reduced]);
+
+  // The logo and copyright must stay visible: lift Naver's control corners out from
+  // under the sheet and panel. On desktop the Legend also sits bottom-right (24px
+  // margin + 32px tall). When the moment card leaves no map above it, the strip under
+  // the card is the only map left, so leave them at the bottom edge.
+  const lift =
+    scene.moment?.phase === "on" && size.height - inset.top - inset.bottom < 40
+      ? 0
+      : inset.bottom;
+  const liftRight = lift + (size.width >= 768 ? 40 : 0);
+  return (
+    <>
+      {/* Naver adds the controls late, so a rule beats an effect. */}
+      <style>{`
+        [data-wh-map] > div > div[style*="z-index: 100"] {
+          transition: ${reduced ? "none" : "translate 300ms ease-out"};
+          translate: ${-inset.right}px ${-liftRight}px;
+        }
+        [data-wh-map] > div > div[style*="z-index: 100"][style*="left: 0px"] {
+          translate: ${inset.left}px ${-lift}px;
+        }
+      `}</style>
+      <Overlay ref={ref} room={room} scene={scene} scale={scale} />
+    </>
+  );
 }

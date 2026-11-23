@@ -9,7 +9,7 @@ we-here의 NestJS 12 API 서버입니다. 방, 사진, 스냅샷(스친 순간·
 API는 Postgres와 `apps/api/.env`가 있어야 뜹니다.
 
 ```bash
-docker compose up -d db                  # Postgres 16, 127.0.0.1:5432
+docker compose -f compose.dev.yaml up -d db   # Postgres 16, 127.0.0.1:5432
 cp apps/api/.env.example apps/api/.env   # 처음 한 번
 pnpm --filter api dev                    # 포트 4000 (PORT로 변경)
 curl http://localhost:4000/health        # {"status":"ok","checks":{"db":"ok"}}
@@ -32,7 +32,7 @@ API를 직접 호출해 보려면 [Swagger로 API 써 보기](#swagger로-api-�
 | `/docs/openapi.json` | OpenAPI 3.1 문서 (JSON) |
 | `/docs/openapi.yaml` | 같은 문서 (YAML) |
 
-`API_DOCS=off`이거나 `NODE_ENV=production`이면 세 주소 모두 404입니다. Docker 이미지(`docker compose --profile app`)는 `NODE_ENV=production`이라 기본으로 꺼져 있습니다.
+`API_DOCS=off`이거나 `NODE_ENV=production`이면 세 주소 모두 404입니다. 프로덕션 이미지(`docker compose -f compose.prod.yaml`)는 `NODE_ENV=production`이라 기본으로 꺼져 있습니다.
 
 ### 화면 읽는 법
 
@@ -112,8 +112,8 @@ curl -s $B/rooms/$RID/chat/messages -H "X-Participant-Token: $TB" | jq '.message
 - **`.env`를 바꾸면 서버를 다시 시작**해야 합니다. watch 모드는 소스 파일만 보고 `.env`는 시작할 때 한 번 읽습니다.
 - **AI 오류 화면 확인**: `LLM_FAKE_SCENARIO`를 `length`(잘림), `mid_error`(중간 실패), `rate_limited`(429), `error`(502) 등으로 바꾸면 실제 모델 없이 오류 상황을 만들 수 있습니다. 스트리밍을 눈으로 보려면 `LLM_FAKE_DELAY_MS=300` 정도로 둡니다.
 - **429 `rate_limited`가 나면**: 방 만들기·참여는 IP당 1시간 10번이 기본입니다. 테스트 중에는 `.env`에서 `ROOM_CREATE_LIMIT_PER_HOUR`를 크게 올립니다. 이 한도는 메모리에만 있어서 서버를 다시 시작해도 풀립니다.
-- **DB 직접 보기**: `docker compose exec db psql -U postgres -d wehere`
-- **로컬 데이터 전부 지우기**: `docker compose down -v`로 DB 볼륨까지 지운 뒤 `docker compose up -d db`. 서버를 다시 띄우면 마이그레이션이 다시 적용됩니다.
+- **DB 직접 보기**: `docker compose -f compose.dev.yaml exec db psql -U postgres -d wehere`
+- **로컬 데이터 전부 지우기**: `docker compose -f compose.dev.yaml down -v`로 DB 볼륨까지 지운 뒤 `docker compose -f compose.dev.yaml up -d db`. 서버를 다시 띄우면 마이그레이션이 다시 적용됩니다.
 - **요청 추적**: 모든 응답의 `x-request-id` 헤더와 오류 본문의 `requestId`가 같은 값입니다. 500 `internal_error`는 서버 로그에 `requestId=...`와 스택이 남으니 이 값으로 찾습니다.
 
 ## 스크립트
@@ -155,7 +155,7 @@ Vitest의 `globals`가 켜져 있어서 `describe`, `it`, `expect`를 import 없
 ### e2e 테스트
 
 ```bash
-docker compose up -d db
+docker compose -f compose.dev.yaml up -d db
 pnpm --filter api test:e2e
 ```
 

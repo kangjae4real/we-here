@@ -7,6 +7,10 @@ Repo: kangjae4real/we-here
 Status: APPROVED
 
 > **읽는 순서:** 이 본문 뒤의 수용 항목(O1~O23, D1~D18, X1~X16, E1~E31, G1~G5)이 본문을 대체한다. 본문과 다르면 뒤의 항목을 따른다(예: 초대 링크 비밀값은 E2, `POST /summary`는 X5, duplicate 규칙은 O3·E10). 1주차 문서 통합(O21·X13)에서 본문에 합친다.
+>
+> **UI 디자인:** 토큰·탭·시트 높이 같은 UI 디자인은 Figma Make 디자인을 따른 `apps/web` 구현(`src/app/globals.css`, `src/features/room/contract.ts`)이 D3·D14·D17과 본문의 "디자인 방향 (잠정안)"을 대체한다. 이 문서의 해당 항목은 당시 기록으로 남겨 둔다.
+>
+> **지도·경로:** 지도는 점·히트맵 레이어가 확대·축소를 프레임마다 따라가도록 `submodules=gl`로 띄우고, 히트맵·점·클러스터는 `visualization` 대신 자체 SVG 레이어(`src/features/room/map/Overlay.tsx`)로 그린다. 방 만들기는 `/new`, 참여 화면은 `/r/{roomId}/join`이다. 본문 "지도" 항목, O17·D15의 visualization 레이어, 본문 140행과 E2의 초대 링크 경로는 당시 기록이다(E2의 초대 비밀값 규칙은 그대로).
 Mode: Builder
 
 ## Problem Statement
