@@ -73,8 +73,7 @@ export function frame(
   let { top, right, bottom, left } = inset;
   // A full-height sheet leaves no map to frame into: callers keep the camera where it
   // is (the whole screen is only used for the very first placement).
-  // Below 2×PAD the padded frame has no room left, and the scale would go nonpositive.
-  const cramped = w - left - right <= 2 * PAD || h - top - bottom <= 2 * PAD;
+  const cramped = w - left - right < 40 || h - top - bottom < 40;
   if (cramped) top = right = bottom = left = 0;
   const fw = w - left - right;
   const fh = h - top - bottom;
@@ -121,9 +120,11 @@ export function frame(
         Math.max(...ys),
       ];
       c = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+      // A thin free strip (40–80px, e.g. 568×300 with the mid sheet) shrinks the padding so the scale stays positive.
+      const pad = Math.min(PAD, fw / 4, fh / 4);
       k = Math.min(
-        (fw - 2 * PAD) / Math.max(x1 - x0, 1),
-        (fh - 2 * PAD) / Math.max(y1 - y0, 1),
+        (fw - 2 * pad) / Math.max(x1 - x0, 1),
+        (fh - 2 * pad) / Math.max(y1 - y0, 1),
         0.5,
       );
     }
