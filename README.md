@@ -66,6 +66,16 @@ docker compose --profile app down
 
 처음 빌드할 때는 의존성을 모두 내려받느라 몇 분 걸립니다. 이후에는 BuildKit 캐시를 재사용해서 `pnpm-lock.yaml`이 바뀌지 않으면 의존성 설치를 건너뜁니다.
 
+### web 개발 서버를 컨테이너에서 실행
+
+```bash
+docker compose --profile dev up -d web-dev   # http://localhost:3000, 소스 변경 시 바로 반영
+docker compose exec web-dev sh -c 'cd apps/web && node_modules/.bin/tsc --noEmit -p .'
+docker compose --profile dev down
+```
+
+소스는 bind mount로 연결되고 `node_modules`와 `.next`는 컨테이너 볼륨에 따로 둡니다. 그래서 호스트의 macOS용 바이너리와 섞이지 않습니다. 의존성을 추가할 때도 `docker compose exec web-dev pnpm --filter web add <패키지> --store-dir /pnpm-store`처럼 컨테이너 안에서 실행합니다. `web-dev`와 `web`(`--profile app`)은 둘 다 3000번 포트를 쓰므로 동시에 띄울 수 없습니다. 네이버 지도 키에 `localhost:3000`만 등록되어 있어서 포트를 바꾸지 않았습니다.
+
 ## 디렉토리 구조
 
 ```

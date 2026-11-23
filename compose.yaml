@@ -50,5 +50,29 @@ services:
       - api
     restart: unless-stopped
 
+  # Hot-reload web dev server: `docker compose --profile dev up web-dev`.
+  # Source is bind-mounted; node_modules and .next stay in container volumes so
+  # the host's macOS binaries never mix with the Linux ones.
+  web-dev:
+    profiles: [dev]
+    build:
+      context: .
+      target: base
+    command: sh -c "pnpm install --frozen-lockfile --store-dir /pnpm-store --config.confirmModulesPurge=false && pnpm --filter web dev -H 0.0.0.0"
+    volumes:
+      - .:/repo
+      - web-dev-root-modules:/repo/node_modules
+      - web-dev-web-modules:/repo/apps/web/node_modules
+      - web-dev-api-modules:/repo/apps/api/node_modules
+      - web-dev-next:/repo/apps/web/.next
+      - pnpm-store:/pnpm-store
+    ports:
+      - "3000:3000"
+
 volumes:
   db-data:
+  web-dev-root-modules:
+  web-dev-web-modules:
+  web-dev-api-modules:
+  web-dev-next:
+  pnpm-store:
