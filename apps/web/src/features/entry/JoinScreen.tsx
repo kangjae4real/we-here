@@ -6,7 +6,7 @@ import { useId, useState } from "react";
 import { getRoom } from "@/features/room/mock";
 import { Button, TextField } from "@/features/ui/controls";
 import { josa } from "@/features/ui/josa";
-import { GhostMark, Mark } from "@/features/ui/marks";
+import { GhostMark, initial, Mark } from "@/features/ui/marks";
 import { rise } from "@/features/ui/motion";
 import { GoneScreen } from "./GoneScreen";
 import { Onboard } from "./Onboard";
@@ -38,7 +38,7 @@ export function JoinScreen() {
             className="relative mb-6 flex h-16 w-[120px] items-center justify-center"
           >
             <span className="absolute left-2 grid size-14 place-items-center rounded-full border-4 border-bg bg-a text-[18px] font-bold text-white">
-              {a.slice(0, 1)}
+              {initial(a)}
             </span>
             <span className="absolute right-2 grid size-14 place-items-center">
               <GhostMark className="size-10 rounded-[11px]" />

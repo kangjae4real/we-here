@@ -70,8 +70,10 @@ export function useReplay(room: Room): Replay {
       last = now;
       const from = pos.get();
       const to = Math.min(100, from + dt * SPEED);
+      // Moments sharing a month share a stop: at the parked position only later indices fire.
       const hit = stops.findIndex(
-        (s, i) => from <= s && to >= s && i !== lastHit.current,
+        (s, i) =>
+          to >= s && (from < s || (from === s && i > (lastHit.current ?? -1))),
       );
       if (hit >= 0) {
         lastHit.current = hit;
@@ -124,7 +126,7 @@ export function useReplay(room: Room): Replay {
       }
       if (pos.get() >= 100) {
         lastHit.current = null;
-        move(0);
+        move(start);
       }
       setMoment(null);
       setPlaying(true);

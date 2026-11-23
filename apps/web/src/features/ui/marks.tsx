@@ -121,6 +121,9 @@ export function Legend({
   );
 }
 
+/** First character of a name; spreads by code point so an emoji isn't split in half. */
+export const initial = (name: string) => [...name][0] ?? "";
+
 /** First letter avatars: A circle + B diamond, overlapped. */
 export function AvatarPair({
   a,
@@ -134,7 +137,7 @@ export function AvatarPair({
   return (
     <span className="flex items-center -space-x-1.5">
       <span className="grid size-7 place-items-center rounded-full border-2 border-white bg-a text-[11px] font-bold text-white">
-        {a.slice(0, 1)}
+        {initial(a)}
       </span>
       <span className="grid size-7 place-items-center">
         {ghostB || !b ? (
@@ -142,7 +145,7 @@ export function AvatarPair({
         ) : (
           <span className="grid size-[22px] rotate-45 place-items-center rounded-[6px] border-2 border-white bg-b">
             <span className="-rotate-45 text-[11px] font-bold text-white">
-              {b.slice(0, 1)}
+              {initial(b)}
             </span>
           </span>
         )}

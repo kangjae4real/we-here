@@ -17,7 +17,7 @@ import {
 } from "react";
 import { Button, IconButton, LinkBox, TextField } from "@/features/ui/controls";
 import { Toast } from "@/features/ui/feedback";
-import { GhostMark, Mark } from "@/features/ui/marks";
+import { GhostMark, initial, Mark } from "@/features/ui/marks";
 import {
   easeOut,
   easeOutCubic,
@@ -249,7 +249,7 @@ function Invite({ nick }: { nick: string }) {
   const router = useRouter();
   const loop = useLoop();
   const [toast, setToast] = useState<string | null>(null);
-  // shortcut: every new room invites into the sample room; the real id comes from the create-room API.
+  // shortcut: every new room invites into the sample room; the real id and `#<inviteSecret>` come from the create-room API.
   const url = `${location.origin}/r/sample/join`;
 
   useEffect(() => {
@@ -300,7 +300,7 @@ function Invite({ nick }: { nick: string }) {
       <div className="mt-10 flex flex-col items-center rounded-[20px] border border-line bg-white px-5 py-6">
         <div aria-hidden className="flex items-center gap-4">
           <span className="grid size-12 place-items-center rounded-full bg-a text-[16px] font-bold text-white">
-            {nick.slice(0, 1)}
+            {initial(nick)}
           </span>
           <svg
             width="56"

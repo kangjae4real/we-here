@@ -115,6 +115,7 @@ function Waiting({ roomId }: { roomId: string }) {
     () => "we-here.app",
   );
   const [notice, setNotice] = useState<Notice | null>(null);
+  // shortcut: the API's invite link also carries `#<inviteSecret>`; add it when room data comes from the API.
   const path = `/r/${roomId}/join`;
 
   async function copy() {

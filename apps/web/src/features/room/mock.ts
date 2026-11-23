@@ -25,8 +25,8 @@ export type ChatMessage = {
   id: string;
   role: "user" | "ai";
   text: string;
-  /** Index into room.moments: renders the "이 순간 리플레이에서 보기" chip. */
-  evidence?: number;
+  /** A room.moments id (`E-…`, as the chat API's evidenceIds): renders the "이 순간 리플레이에서 보기" chip. */
+  evidence?: string;
   error?: boolean;
 };
 export type UploadResult = { ok: number; noLocation: number; noTime: number };
@@ -272,14 +272,14 @@ export const suggestedQuestions = [
 const CANNED: Record<string, Omit<ChatMessage, "id" | "role">> = {
   [suggestedQuestions[0]]: {
     text: "2022년 4월 9일, 둘 다 여의도 한강공원에 있었어. 고작 210m, 8분 차이로!",
-    evidence: 0,
+    evidence: "E-a1b2c3",
   },
   [suggestedQuestions[1]]: {
     text: "성수동이야! 만난 뒤로 14일이나 같이 갔어.",
   },
   [suggestedQuestions[2]]: {
     text: "2023년 8월 15일, 둘 다 성수동에서 저녁을 보냈어. 23분 차이야.",
-    evidence: 1,
+    evidence: "E-d4e5f6",
   },
 };
 

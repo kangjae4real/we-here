@@ -89,10 +89,8 @@ export function ChatPanel({
               >
                 <Message
                   m={m}
-                  // The moment may be gone (empty / no-moments rooms): no dead replay link.
-                  replayable={
-                    m.evidence !== undefined && m.evidence < room.moments.length
-                  }
+                  // -1 when the moment is gone (empty / no-moments rooms): no dead replay link.
+                  moment={room.moments.findIndex((x) => x.id === m.evidence)}
                   onEvidence={onEvidence}
                   onRetry={chat.retry}
                 />
@@ -215,16 +213,15 @@ function Bubble({
 
 function Message({
   m,
-  replayable,
+  moment,
   onEvidence,
   onRetry,
 }: {
   m: ChatMessage;
-  replayable: boolean;
+  moment: number;
   onEvidence: (momentIndex: number) => void;
   onRetry: () => void;
 }) {
-  const { evidence } = m;
   if (m.role === "user") return <Bubble from="me">{m.text}</Bubble>;
   const pill = cn(
     HIT,
@@ -244,11 +241,11 @@ function Message({
       ) : (
         m.text
       )}
-      {replayable && evidence !== undefined && (
+      {moment >= 0 && (
         <motion.button
           type="button"
           {...press}
-          onClick={() => onEvidence(evidence)}
+          onClick={() => onEvidence(moment)}
           className={cn(pill, "gap-1 bg-butter-soft text-ink")}
         >
           이 순간 리플레이에서 보기
