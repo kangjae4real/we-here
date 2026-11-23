@@ -37,7 +37,7 @@ export function SettingsPanel({ room }: { room: Room }) {
           </p>
           <IconButton
             label="처음 만난 날 수정"
-            onClick={() => dateInput.current?.showPicker()}
+            onClick={() => dateInput.current?.showPicker?.()}
             className="mb-1 bg-white"
           >
             <PencilIcon size={18} strokeWidth={2} />
@@ -81,7 +81,7 @@ export function SettingsPanel({ room }: { room: Room }) {
         <Row
           icon={<CalendarHeartIcon size={20} strokeWidth={2} />}
           label="처음 만난 날 바꾸기"
-          onClick={() => dateInput.current?.showPicker()}
+          onClick={() => dateInput.current?.showPicker?.()}
         />
         {b && (
           <Row

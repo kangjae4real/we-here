@@ -144,7 +144,8 @@ export function TimeSlider({
             />
             <span className="h-full flex-1 bg-heat-2" />
           </div>
-          {ticks.map((p) => (
+          {/* Moments sharing a month share a tick. */}
+          {[...new Set(ticks)].map((p) => (
             <span
               key={p}
               className="absolute top-0.5 h-5 w-1 -translate-x-1/2 rounded-full bg-butter-press"

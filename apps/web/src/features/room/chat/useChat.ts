@@ -22,19 +22,19 @@ function seed(room: Room): ChatMessage[] {
 
 export function useChat(room: Room): Chat {
   const [messages, setMessages] = useState(() => seed(room));
-  const [typing, setTyping] = useState(false);
+  // The question awaiting an answer. Kept in state, not a timer ref, so a room hidden
+  // and shown again by Next's Activity cache restarts the reply instead of hanging.
+  const [pending, setPending] = useState<string | null>(null);
   const [usedToday, setUsedToday] = useState(room.chat.usedToday);
   const failNext = useRef(room.chat.failsNext ?? false);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const nextId = useRef(0);
+  const typing = pending !== null;
   const limited = usedToday >= room.chat.limit;
 
-  useEffect(() => () => clearTimeout(timer.current), []);
-
-  function reply(question: string) {
-    setTyping(true);
+  useEffect(() => {
+    if (pending === null) return;
     // shortcut: canned answers until /api/chat is wired
-    timer.current = setTimeout(() => {
+    const timer = setTimeout(() => {
       const answer: ChatMessage = failNext.current
         ? {
             id: `m${nextId.current++}`,
@@ -42,12 +42,13 @@ export function useChat(room: Room): Chat {
             text: FAIL_TEXT,
             error: true,
           }
-        : { id: `m${nextId.current++}`, role: "ai", ...cannedAnswer(question) };
+        : { id: `m${nextId.current++}`, role: "ai", ...cannedAnswer(pending) };
       failNext.current = false;
-      setTyping(false);
+      setPending(null);
       setMessages((m) => [...m, answer]);
     }, REPLY_MS);
-  }
+    return () => clearTimeout(timer);
+  }, [pending]);
 
   function ask(question: string) {
     const text = question.trim();
@@ -55,14 +56,19 @@ export function useChat(room: Room): Chat {
     const id = `m${nextId.current++}`;
     setMessages((m) => [...m, { id, role: "user", text }]);
     setUsedToday((n) => n + 1);
-    reply(text);
+    setPending(text);
   }
 
+  // Re-asks the question the latest error answered, even if later questions went through.
   function retry() {
-    const question = messages.findLast((m) => m.role === "user")?.text;
-    if (typing || !question) return;
-    setMessages((m) => m.filter((x) => !x.error));
-    reply(question);
+    const i = messages.findLastIndex((m) => m.error);
+    const question = messages
+      .slice(0, i)
+      .findLast((m) => m.role === "user")?.text;
+    if (typing || i < 0 || !question) return;
+    const failed = messages[i].id;
+    setMessages((m) => m.filter((x) => x.id !== failed));
+    setPending(question);
   }
 
   return { messages, typing, ask, retry, usedToday, limited };

@@ -286,9 +286,8 @@ const CANNED: Record<string, Omit<ChatMessage, "id" | "role">> = {
 export function cannedAnswer(
   question: string,
 ): Omit<ChatMessage, "id" | "role"> {
-  return (
-    CANNED[question] ?? {
-      text: "음, 그건 기록에서 못 찾았어. 다르게 물어봐줄래?",
-    }
-  );
+  // hasOwn: free text like "constructor" must not match Object.prototype members.
+  return Object.hasOwn(CANNED, question)
+    ? CANNED[question]
+    : { text: "음, 그건 기록에서 못 찾았어. 다르게 물어봐줄래?" };
 }

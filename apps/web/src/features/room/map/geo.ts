@@ -73,7 +73,8 @@ export function frame(
   let { top, right, bottom, left } = inset;
   // A full-height sheet leaves no map to frame into: callers keep the camera where it
   // is (the whole screen is only used for the very first placement).
-  const cramped = w - left - right < 40 || h - top - bottom < 40;
+  // Below 2×PAD the padded frame has no room left, and the scale would go nonpositive.
+  const cramped = w - left - right <= 2 * PAD || h - top - bottom <= 2 * PAD;
   if (cramped) top = right = bottom = left = 0;
   const fw = w - left - right;
   const fh = h - top - bottom;
