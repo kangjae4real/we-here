@@ -41,7 +41,8 @@ function Card({ room, replay, i }: { room: Room; replay: Replay; i: number }) {
           스친 순간 · {i + 1}/{room.moments.length}
         </ChapterBadge>
       </div>
-      <div className="relative mt-4 flex h-[204px] justify-center">
+      {/* The 308px pair outgrows a 320px phone's 240px card body: scale it to fit there. */}
+      <div className="relative mt-4 flex h-[204px] justify-center max-[359px]:h-[156px] max-[359px]:origin-top max-[359px]:scale-[0.76]">
         <Polaroid
           who="a"
           name={names.a}
