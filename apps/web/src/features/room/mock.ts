@@ -1,192 +1,294 @@
-// Synthetic sample room. Every coordinate, date and name here is made up.
+// Synthetic sample rooms. Every coordinate, date and name here is made up.
+// Copy and numbers follow the Figma Make design ("두 사람의 스친 순간 찾기").
 
 export type Who = "a" | "b";
 export type LatLng = { lat: number; lng: number };
 export type PhotoPoint = LatLng & { id: string; who: Who };
-export type Shot = LatLng & { time: string; date: string };
 
-export type ReplayEvent = {
+/** One side of a 스친 순간: where the photo was taken, and where the approach trail starts. */
+export type Shot = LatLng & { time: string; photo: string; from: LatLng };
+export type Moment = {
   id: string;
-  act: 1 | 2;
-  /** Slider position, 0-100. */
-  position: number;
   place: string;
+  /** "2022.04.09 (토)" */
+  date: string;
+  /** Month on the replay timeline, "YYYY-MM". */
+  month: string;
   a: Shot;
   b: Shot;
-  /** Act 1: "같은 날, 3시간 차이" / "{N}일 차이". */
-  gap?: string;
-  /** Act 2 (스친 순간). */
-  distanceM?: number;
-  minutesApart?: number;
-  uncertain?: boolean;
+  distanceM: number;
+  minutesApart: number;
+};
+export type TopPlace = LatLng & { rank: number; name: string; days: number };
+export type HeatCell = LatLng & { level: 1 | 2 | 3; radiusM: number };
+export type ChatMessage = {
+  id: string;
+  role: "user" | "ai";
+  text: string;
+  /** Index into room.moments: renders the "이 순간 리플레이에서 보기" chip. */
+  evidence?: number;
+  error?: boolean;
+};
+export type UploadResult = { ok: number; noLocation: number; noTime: number };
+
+export type Room = {
+  id: string;
+  /** "ok" renders the room; "full"/"expired" render the S7/S8 gone screens. */
+  status: "ok" | "full" | "expired";
+  name: string;
+  a: { nickname: string; photoCount: number };
+  /** null until the invited person joins (S2). */
+  b: { nickname: string; photoCount: number } | null;
+  /** "2024.03.02" */
+  firstMet: string;
+  /** "2024.04.01" */
+  expires: string;
+  points: PhotoPoint[];
+  moments: Moment[];
+  /** ① 같은 곳, 다른 때: places both visited on different days. */
+  samePlaceCount: number;
+  topPlaces: TopPlace[];
+  heat: HeatCell[];
+  records: { oldest: string; latest: string; placesTogether: number };
+  recentPhotos: { src: string; who: Who }[];
+  /** Replay timeline bounds, "YYYY-MM" (oldest photo → first met). */
+  timeline: { start: string; end: string };
+  /** Mocked outcome of the next upload (EXIF is not parsed yet). */
+  upload: UploadResult & { fails?: boolean };
+  chat: { failsNext?: boolean; usedToday: number; limit: number };
 };
 
-export type HeatCell = LatLng & { place: string; days: number };
-export type ChatMessage = { id: string; role: "user" | "ai"; text: string };
-
-export const ACTS = [
-  { act: 1, start: 0, end: 30, label: "같은 곳, 다른 때" },
-  { act: 2, start: 30, end: 70, label: "스친 순간" },
-  { act: 3, start: 70, end: 100, label: "만난 뒤 우리 기록" },
-] as const;
+const PHOTO = {
+  aRiver: "/sample/a-river.jpg",
+  bRiver: "/sample/b-river.jpg",
+  cafe: "/sample/cafe.jpg",
+  street: "/sample/street.jpg",
+  awning: "/sample/awning.jpg",
+  skyline: "/sample/skyline.jpg",
+  bench: "/sample/bench.jpg",
+};
 
 const PLACES = [
-  { name: "홍대입구", lat: 37.5572, lng: 126.9245 },
+  { name: "홍대", lat: 37.5572, lng: 126.9245 },
   { name: "연남동", lat: 37.5627, lng: 126.9255 },
   { name: "성수동", lat: 37.5446, lng: 127.0557 },
   { name: "서울숲", lat: 37.5444, lng: 127.0374 },
-  { name: "여의도 한강공원", lat: 37.5284, lng: 126.9346 },
-  { name: "강남역", lat: 37.4979, lng: 127.0276 },
-  { name: "광화문", lat: 37.5759, lng: 126.9768 },
-  { name: "이태원", lat: 37.5345, lng: 126.9946 },
-  { name: "망원 한강공원", lat: 37.5551, lng: 126.8945 },
+  { name: "여의도", lat: 37.5284, lng: 126.9346 },
+  { name: "강남", lat: 37.4979, lng: 127.0276 },
+  { name: "종로", lat: 37.5704, lng: 126.9921 },
+  { name: "남산", lat: 37.5512, lng: 126.9882 },
+  { name: "용산", lat: 37.5298, lng: 126.9648 },
   { name: "잠실", lat: 37.5112, lng: 127.0981 },
 ];
 
 export const MAP_LABELS = PLACES;
+const place = (name: string) =>
+  PLACES.find((p) => p.name === name) ?? PLACES[0];
 
-// Deterministic jitter so server and client render the same points.
-function makePoints(who: Who, offset: number): PhotoPoint[] {
-  return Array.from({ length: 40 }, (_, i) => {
-    const place = PLACES[(i * 3 + offset) % PLACES.length];
-    return {
-      id: `${who}-${i}`,
-      who,
-      lat: place.lat + (((i * 37 + offset) % 13) - 6) * 0.0006,
-      lng: place.lng + (((i * 53 + offset * 7) % 13) - 6) * 0.0008,
-    };
-  });
-}
-
-export const sampleRoom = {
-  id: "sample",
-  name: "지우 & 민준",
-  metOn: "2023-05-20",
-  a: { nickname: "지우", photoCount: 40 },
-  b: { nickname: "민준", photoCount: 40 },
-  points: [...makePoints("a", 0), ...makePoints("b", 5)],
+/** [lat, lng, count, spread m]: a dense spot (≤ 30 m, clusters on the map) or loose scatter (550–1000 m) around it. */
+type Spot = [number, number, number, number];
+// Shaped like the design's DOTS_A/DOTS_B + CLUSTERS: dense spots first so they seed the clusters.
+const SPOTS: Record<Who, Spot[]> = {
+  a: [
+    [37.5572, 126.9245, 24, 30], // 홍대
+    [37.5704, 126.9921, 12, 30], // 종로
+    [37.5572, 126.9245, 7, 1000], // 홍대
+    [37.5445, 126.9515, 5, 1000], // 마포
+    [37.5704, 126.9921, 5, 1000], // 종로
+    [37.5315, 126.94, 4, 1000], // 여의도
+    [37.5446, 127.0557, 4, 1000], // 성수
+    [37.5512, 126.9882, 3, 1000], // 남산
+  ],
+  b: [
+    [37.4979, 127.0276, 18, 30], // 강남
+    [37.5446, 127.0557, 15, 30], // 성수
+    [37.5446, 127.0557, 6, 1000], // 성수
+    [37.4979, 127.0276, 7, 1000], // 강남
+    [37.5298, 126.9648, 5, 1000], // 용산
+    [37.5112, 127.0981, 5, 1000], // 잠실
+    [37.5284, 126.9346, 3, 1000], // 여의도
+    [37.5714, 127.0094, 3, 1000], // 동대문
+  ],
 };
 
-const ACT1: ReplayEvent[] = [
-  {
-    place: "서울숲",
-    a: { lat: 37.5447, lng: 127.0368, date: "2021년 5월 2일", time: "11:20" },
-    b: { lat: 37.5439, lng: 127.0381, date: "2021년 5월 2일", time: "14:31" },
-    gap: "같은 날, 3시간 차이",
-  },
-  {
-    place: "망원 한강공원",
-    a: { lat: 37.5556, lng: 126.8938, date: "2021년 7월 10일", time: "18:02" },
-    b: { lat: 37.5547, lng: 126.8952, date: "2021년 8월 21일", time: "19:45" },
-    gap: "42일 차이",
-  },
-  {
-    place: "광화문",
-    a: { lat: 37.5762, lng: 126.9761, date: "2021년 10월 3일", time: "13:10" },
-    b: { lat: 37.5753, lng: 126.9774, date: "2021년 10월 9일", time: "15:55" },
-    gap: "6일 차이",
-  },
-  {
-    place: "이태원",
-    a: { lat: 37.5349, lng: 126.9939, date: "2021년 12월 24일", time: "20:14" },
-    b: { lat: 37.5341, lng: 126.9953, date: "2022년 2월 12일", time: "17:40" },
-    gap: "50일 차이",
-  },
-  {
-    place: "잠실",
-    a: { lat: 37.5116, lng: 127.0975, date: "2022년 3월 1일", time: "12:05" },
-    b: { lat: 37.5108, lng: 127.0988, date: "2022년 3월 1일", time: "17:22" },
-    gap: "같은 날, 5시간 차이",
-  },
-  {
-    place: "강남역",
-    a: { lat: 37.4983, lng: 127.027, date: "2022년 11월 5일", time: "19:30" },
-    b: { lat: 37.4975, lng: 127.0283, date: "2023년 2월 18일", time: "18:48" },
-    gap: "105일 차이",
-  },
-].map((e, i) => ({
-  ...e,
-  id: `C-${i + 1}`,
-  act: 1 as const,
-  position: i * 5,
-}));
+// Seeded scatter so server and client render the same points.
+function makePoints(who: Who): PhotoPoint[] {
+  let seed = who === "a" ? 7 : 19;
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+  return SPOTS[who]
+    .flatMap(([lat, lng, n, spread]) =>
+      Array.from({ length: n }, () => {
+        const angle = rand() * Math.PI * 2;
+        // Loose dots keep clear of the dense spot so they don't merge into its cluster.
+        const d =
+          spread > 100 ? 550 + rand() * (spread - 550) : rand() * spread;
+        return {
+          lat: lat + (Math.sin(angle) * d) / 111_320,
+          lng:
+            lng +
+            (Math.cos(angle) * d) / (111_320 * Math.cos((lat * Math.PI) / 180)),
+        };
+      }),
+    )
+    .map((p, i) => ({ ...p, id: `${who}-${i}`, who }));
+}
 
-const ENCOUNTERS: ReplayEvent[] = [
+const MOMENTS: Moment[] = [
   {
     id: "E-a1b2c3",
-    act: 2,
-    position: 42,
     place: "여의도 한강공원",
-    a: { lat: 37.5279, lng: 126.9335, date: "2022년 4월 9일", time: "15:12" },
-    b: { lat: 37.5288, lng: 126.9357, date: "2022년 4월 9일", time: "15:20" },
+    date: "2022.04.09 (토)",
+    month: "2022-04",
+    a: {
+      lat: 37.5279,
+      lng: 126.9335,
+      time: "15:12",
+      photo: PHOTO.aRiver,
+      from: { lat: 37.5312, lng: 126.9268 },
+    },
+    b: {
+      lat: 37.5288,
+      lng: 126.9357,
+      time: "15:20",
+      photo: PHOTO.bRiver,
+      from: { lat: 37.5246, lng: 126.9431 },
+    },
     distanceM: 210,
     minutesApart: 8,
   },
   {
     id: "E-d4e5f6",
-    act: 2,
-    position: 55,
-    place: "성수동 카페거리",
-    a: { lat: 37.5443, lng: 127.055, date: "2022년 9월 17일", time: "13:41" },
-    b: { lat: 37.5449, lng: 127.0564, date: "2022년 9월 17일", time: "13:47" },
-    distanceM: 140,
-    minutesApart: 6,
-    uncertain: true,
+    place: "성수동",
+    date: "2023.08.15 (화)",
+    month: "2023-08",
+    a: {
+      lat: 37.5443,
+      lng: 127.053,
+      time: "19:40",
+      photo: PHOTO.cafe,
+      from: { lat: 37.5478, lng: 127.0472 },
+    },
+    b: {
+      lat: 37.5451,
+      lng: 127.0577,
+      time: "20:03",
+      photo: PHOTO.awning,
+      from: { lat: 37.5409, lng: 127.0641 },
+    },
+    distanceM: 450,
+    minutesApart: 23,
   },
-  {
-    id: "E-0f9e8d",
-    act: 2,
-    position: 64,
-    place: "홍대입구",
-    a: { lat: 37.5569, lng: 126.9241, date: "2023년 1월 28일", time: "19:05" },
-    b: { lat: 37.5574, lng: 126.925, date: "2023년 1월 28일", time: "19:13" },
-    distanceM: 90,
-    minutesApart: 8,
+];
+
+const TOP: TopPlace[] = [
+  { ...place("성수동"), rank: 1, days: 14 },
+  { ...place("여의도"), rank: 2, days: 9 },
+  { ...place("홍대"), rank: 3, days: 6 },
+];
+
+const HEAT: HeatCell[] = [
+  { ...place("성수동"), level: 3, radiusM: 900 },
+  { ...place("여의도"), level: 2, radiusM: 700 },
+  { ...place("홍대"), level: 2, radiusM: 600 },
+  { ...place("남산"), level: 1, radiusM: 450 },
+  { ...place("용산"), level: 1, radiusM: 400 },
+  { ...place("강남"), level: 1, radiusM: 380 },
+];
+
+export const sampleRoom: Room = {
+  id: "sample",
+  status: "ok",
+  name: "우리 둘의 지도",
+  a: { nickname: "서연", photoCount: 128 },
+  b: { nickname: "도윤", photoCount: 96 },
+  firstMet: "2024.03.02",
+  expires: "2024.04.01",
+  points: [...makePoints("a"), ...makePoints("b")],
+  moments: MOMENTS,
+  samePlaceCount: 7,
+  topPlaces: TOP,
+  heat: HEAT,
+  records: {
+    oldest: "2019.06.02 · 홍대",
+    latest: "2024.03.10 · 성수동",
+    placesTogether: 23,
   },
-];
-
-export const replayEvents: ReplayEvent[] = [...ACT1, ...ENCOUNTERS];
-
-export const heatCells: HeatCell[] = [
-  { place: "연남동", days: 14 },
-  { place: "성수동", days: 11 },
-  { place: "망원 한강공원", days: 9 },
-  { place: "여의도 한강공원", days: 8 },
-  { place: "홍대입구", days: 7 },
-  { place: "서울숲", days: 6 },
-  { place: "광화문", days: 5 },
-  { place: "강남역", days: 4 },
-  { place: "이태원", days: 3 },
-  { place: "잠실", days: 2 },
-].map((c) => {
-  const p = PLACES.find((place) => place.name === c.place) ?? PLACES[0];
-  return { ...c, lat: p.lat, lng: p.lng };
-});
-
-export const chatModels = [
-  { id: "meta/llama-3.3-70b-instruct", label: "Llama 3.3 70B" },
-  { id: "qwen/qwen3-235b-a22b", label: "Qwen3 235B" },
-  { id: "deepseek-ai/deepseek-v3.1", label: "DeepSeek V3.1" },
-];
-
-export const suggestedQuestions = [
-  "우리가 처음 스친 곳은 어디야?",
-  "스친 순간을 모두 알려줘",
-  "만난 뒤 가장 자주 간 곳은?",
-];
-
-const CANNED: Record<string, string> = {
-  [suggestedQuestions[0]]:
-    "가장 먼저 가까이 있던 순간은 2022년 4월 9일 여의도 한강공원이에요. 지우님과 민준님의 사진이 210m, 8분 차이로 찍혔어요. [E-a1b2c3]",
-  [suggestedQuestions[1]]:
-    "만나기 전 스친 순간은 3번이에요. 여의도 한강공원 [E-a1b2c3], 성수동 카페거리 [E-d4e5f6](시간대 정보가 없어 시각은 추정이에요), 홍대입구 [E-0f9e8d].",
-  [suggestedQuestions[2]]:
-    "만난 뒤에는 연남동에 가장 여러 날(14일) 갔어요. 그다음은 성수동 11일, 망원 한강공원 9일이에요.",
+  recentPhotos: [
+    { src: PHOTO.cafe, who: "a" },
+    { src: PHOTO.awning, who: "b" },
+    { src: PHOTO.aRiver, who: "a" },
+    { src: PHOTO.street, who: "b" },
+    { src: PHOTO.skyline, who: "a" },
+    { src: PHOTO.bench, who: "b" },
+  ],
+  timeline: { start: "2019-06", end: "2024-03" },
+  upload: { ok: 112, noLocation: 12, noTime: 4 },
+  chat: { usedToday: 3, limit: 20 },
 };
 
-export function cannedAnswer(question: string) {
+// shortcut: room ids double as design-state fixtures until the API is wired up.
+// /r/sample is the full demo; the others open one design state each (S1–S8, 06d).
+const FIXTURES: Record<string, Partial<Room>> = {
+  empty: {
+    a: { nickname: "서연", photoCount: 0 },
+    b: { nickname: "도윤", photoCount: 0 },
+    points: [],
+    moments: [],
+    samePlaceCount: 0,
+    topPlaces: [],
+    heat: [],
+    recentPhotos: [],
+  },
+  waiting: {
+    b: null,
+    points: makePoints("a"),
+    moments: [],
+    samePlaceCount: 0,
+    topPlaces: [],
+    heat: [],
+  },
+  "upload-fail": { upload: { ok: 0, noLocation: 0, noTime: 0, fails: true } },
+  "low-location": { upload: { ok: 81, noLocation: 43, noTime: 4 } },
+  "no-moments": { moments: [] },
+  "chat-fail": { chat: { failsNext: true, usedToday: 3, limit: 20 } },
+  "chat-limit": { chat: { usedToday: 20, limit: 20 } },
+  full: { status: "full" },
+  expired: { status: "expired" },
+};
+
+export function getRoom(id: string): Room {
+  return { ...sampleRoom, ...FIXTURES[id], id };
+}
+
+export const suggestedQuestions = [
+  "우리 처음 스친 곳 어디야?",
+  "제일 자주 간 동네는?",
+  "만나기 전 같은 날 뭐 했어?",
+];
+
+const CANNED: Record<string, Omit<ChatMessage, "id" | "role">> = {
+  [suggestedQuestions[0]]: {
+    text: "2022년 4월 9일, 둘 다 여의도 한강공원에 있었어. 고작 210m, 8분 차이로!",
+    evidence: 0,
+  },
+  [suggestedQuestions[1]]: {
+    text: "성수동이야! 만난 뒤로 14일이나 같이 갔어.",
+  },
+  [suggestedQuestions[2]]: {
+    text: "2023년 8월 15일, 둘 다 성수동에서 저녁을 보냈어. 23분 차이야.",
+    evidence: 1,
+  },
+};
+
+export function cannedAnswer(
+  question: string,
+): Omit<ChatMessage, "id" | "role"> {
   return (
-    CANNED[question] ??
-    "샘플 방에서는 미리 준비한 답만 보여 드려요. 예를 들어 성수동 카페거리에서 6분 차이로 스친 순간이 있어요. [E-d4e5f6]"
+    CANNED[question] ?? {
+      text: "음, 그건 기록에서 못 찾았어. 다르게 물어봐줄래?",
+    }
   );
 }

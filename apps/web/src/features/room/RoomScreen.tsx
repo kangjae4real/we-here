@@ -1,143 +1,244 @@
 "use client";
 
+import { AnimatePresence, motion } from "motion/react";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChatPanel } from "./ChatPanel";
-import { MapCanvas } from "./MapCanvas";
+import { useEffect, useRef, useState } from "react";
+import { GoneScreen } from "@/features/entry/GoneScreen";
+import { Segmented } from "@/features/ui/controls";
+import { Legend } from "@/features/ui/marks";
+import { sheetSpring } from "@/features/ui/motion";
+import { useIsDesktop } from "@/features/ui/useIsDesktop";
+import { ChatPanel } from "./chat/ChatPanel";
+import { useChat } from "./chat/useChat";
 import {
-  type ChatMessage,
-  cannedAnswer,
-  chatModels,
-  heatCells,
-  replayEvents,
-  sampleRoom,
-} from "./mock";
-import { RecordsPanel } from "./RecordsPanel";
-import { actAt, ReplayPanel } from "./ReplayPanel";
-import { RoomShell, SNAP_POINTS, type SnapPoint } from "./RoomShell";
+  type MapInset,
+  type MapScene,
+  type SheetState,
+  TABS,
+  type TabId,
+} from "./contract";
+import { HeatPanel } from "./heat/HeatPanel";
+import { MapCanvas } from "./MapCanvas";
+import { getRoom, type Room as RoomData } from "./mock";
+import { RecordsPanel } from "./records/RecordsPanel";
+import { MomentCard } from "./replay/MomentCard";
+import { CollapsedReplay, MomentChip, ReplayPanel } from "./replay/ReplayPanel";
+import { useReplay } from "./replay/useReplay";
+import { SettingsPanel } from "./settings/SettingsPanel";
+import { FlowHeader, Panel, TopBar } from "./shell/chrome";
+import { Sheet, sheetHeights, useViewport } from "./shell/Sheet";
+import { UploadFlow } from "./upload/UploadFlow";
 
-type Tab = "replay" | "records" | "chat";
+type Flow = "upload" | "settings";
+const FLOW_TITLE: Record<Flow, string> = {
+  upload: "사진 올리기",
+  settings: "방 설정",
+};
 
-// About 60 s for the whole replay (D5), not counting encounter stops.
-const TICK_MS = 300;
-const STEP = 0.5;
-
-// shortcut: every room id shows the sample data until the API is wired up.
-const room = sampleRoom;
-const nicknames = { a: room.a.nickname, b: room.b.nickname };
+/** Screen px the mobile 07c card covers on a 390×844 frame (card top at y≈230). */
+const CARD_H = 610;
 
 export function RoomScreen() {
   const { roomId } = useParams<{ roomId: string }>();
+  const room = getRoom(roomId);
+  if (room.status !== "ok") return <GoneScreen kind={room.status} />;
+  // Keyed so a route change (e.g. 10a → /r/waiting) starts from fresh state.
+  return <Room key={room.id} room={room} />;
+}
 
-  // Panel state lives here once; the drawer and the aside only render it (O1a).
-  const [tab, setTab] = useState<Tab>("replay");
-  const [snapPoint, setSnapPoint] = useState<SnapPoint | null>(SNAP_POINTS[0]);
-  const [replay, setReplay] = useState({ progress: 0, playing: false });
-  const [model, setModel] = useState(chatModels[0].id);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+/** Map fills the screen; tabs live in a bottom sheet (mobile) or a left panel (md+). */
+function Room({ room }: { room: RoomData }) {
+  const desktop = useIsDesktop();
+  const viewport = useViewport();
+  const heights = sheetHeights(viewport);
+  const replay = useReplay(room);
+  const chat = useChat(room);
+  const [tab, setTab] = useState<TabId>("record");
+  const [flow, setFlow] = useState<Flow | null>(null);
+  const [sheet, setSheet] = useState<SheetState>("mid");
+  const [selected, setSelected] = useState<number | null>(null);
 
+  // An encounter starts over a collapsed sheet; closing its card brings the sheet back up.
+  // Only these two edges move it, so drags during approach/pop and mini-player seeks stick.
+  const phase = replay.moment?.phase ?? null;
+  const [prevPhase, setPrevPhase] = useState(phase);
+  const [refocus, setRefocus] = useState(false);
+  if (phase !== prevPhase) {
+    setPrevPhase(phase);
+    if (prevPhase === null && phase === "approach") setSheet("collapsed");
+    else if (
+      prevPhase === "on" &&
+      phase === null &&
+      tab === "replay" &&
+      !flow
+    ) {
+      setSheet("mid");
+      setRefocus(true);
+    }
+  }
+
+  // The card's buttons unmount on close, dropping focus to <body>: hand it to the timeline.
+  // The card keeps focus while it animates out, and on mobile the full player only mounts
+  // after the mini one exits, so keep re-checking for a moment instead of one shot.
+  const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!replay.playing) return;
+    if (!refocus) return;
+    const started = performance.now();
     const timer = setInterval(() => {
-      setReplay((prev) => {
-        const next = Math.min(prev.progress + STEP, 100);
-        // Auto-stop on an encounter (D5); resuming is manual.
-        const stop = replayEvents.find(
-          (e) =>
-            e.act === 2 && e.position > prev.progress && e.position <= next,
-        );
-        if (stop) return { progress: stop.position, playing: false };
-        return { progress: next, playing: next < 100 };
-      });
-    }, TICK_MS);
+      const active = document.activeElement;
+      if (!active || active === document.body || active.closest("[data-card]"))
+        root.current?.querySelector<HTMLElement>('[role="slider"]')?.focus();
+      if (performance.now() - started > 1500) setRefocus(false);
+    }, 100);
     return () => clearInterval(timer);
-  }, [replay.playing]);
+  }, [refocus]);
 
-  const act = actAt(replay.progress).act;
-  const activeEvent =
-    replayEvents
-      .filter((e) => e.act === act && e.position <= replay.progress)
-      .at(-1) ?? null;
-  const showHeat = tab === "records" || act === 3;
-
-  function seek(progress: number) {
-    setReplay({ progress, playing: false });
+  function leaveReplay() {
+    if (replay.playing) replay.toggle();
+    if (replay.moment) replay.closeMoment();
   }
-
-  function showEncounter(id: string) {
-    const event = replayEvents.find((e) => e.id === id);
-    if (!event) return;
+  function selectTab(id: TabId) {
+    if (id !== "replay") leaveReplay();
+    setTab(id);
+    setSheet(id === "chat" ? "full" : "mid");
+  }
+  function openFlow(next: Flow) {
+    leaveReplay();
+    setFlow(next);
+    setSheet("full");
+  }
+  function closeFlow() {
+    setFlow(null);
+    setSheet(tab === "chat" ? "full" : "mid");
+  }
+  function showEvidence(index: number) {
     setTab("replay");
-    seek(event.position);
+    setSheet("mid");
+    replay.openMoment(index);
   }
 
-  function send(text: string) {
-    setMessages((prev) => [
-      ...prev,
-      { id: `u${prev.length}`, role: "user", text },
-      { id: `a${prev.length}`, role: "ai", text: cannedAnswer(text) },
-    ]);
-  }
-
-  const panel = (
-    <Tabs
+  const cardOn = phase === "on" && !flow;
+  const miniReplay =
+    !desktop && !flow && tab === "replay" && sheet === "collapsed";
+  const bodyKey = flow ?? (miniReplay ? "replay-mini" : tab);
+  const body =
+    flow === "upload" ? (
+      <UploadFlow
+        room={room}
+        onDone={() => {
+          setFlow(null);
+          setTab("record");
+          setSheet("mid");
+        }}
+      />
+    ) : flow === "settings" ? (
+      <SettingsPanel room={room} />
+    ) : miniReplay ? (
+      <CollapsedReplay room={room} replay={replay} />
+    ) : tab === "record" ? (
+      <RecordsPanel room={room} onUpload={() => openFlow("upload")} />
+    ) : tab === "replay" ? (
+      <ReplayPanel
+        room={room}
+        replay={replay}
+        onTogether={() => selectTab("heat")}
+      />
+    ) : tab === "heat" ? (
+      <HeatPanel room={room} selected={selected} onSelect={setSelected} />
+    ) : (
+      <ChatPanel room={room} chat={chat} onEvidence={showEvidence} />
+    );
+  const header = flow ? (
+    <FlowHeader title={FLOW_TITLE[flow]} onClose={closeFlow} />
+  ) : (
+    <Segmented
+      options={TABS}
       value={tab}
-      onValueChange={(value) => setTab(value as Tab)}
-      className="min-h-0 flex-1 gap-0"
-    >
-      <TabsList className="w-full shrink-0 group-data-horizontal/tabs:h-11">
-        <TabsTrigger value="replay">리플레이</TabsTrigger>
-        <TabsTrigger value="records">우리 기록</TabsTrigger>
-        <TabsTrigger value="chat">AI에게 묻기</TabsTrigger>
-      </TabsList>
-      <TabsContent value="replay" className="flex min-h-0 flex-col">
-        <ReplayPanel
-          progress={replay.progress}
-          playing={replay.playing}
-          events={replayEvents}
-          activeEvent={activeEvent}
-          nicknames={nicknames}
-          onTogglePlay={() =>
-            setReplay((prev) => ({
-              progress: prev.progress >= 100 ? 0 : prev.progress,
-              playing: !prev.playing,
-            }))
-          }
-          onSeek={seek}
-          onOpenRecords={() => setTab("records")}
-        />
-      </TabsContent>
-      <TabsContent value="records" className="flex min-h-0 flex-col">
-        <RecordsPanel cells={heatCells} />
-      </TabsContent>
-      <TabsContent value="chat" className="flex min-h-0 flex-col">
-        <ChatPanel
-          messages={messages}
-          model={model}
-          onModelChange={setModel}
-          onSend={send}
-          onEvidence={showEncounter}
-          onInputFocus={() => setSnapPoint(0.9)}
-        />
-      </TabsContent>
-    </Tabs>
+      onChange={selectTab}
+      label="방 보기"
+    />
   );
 
+  const scene: MapScene = {
+    dots: room.points.length === 0 ? "none" : room.b ? "all" : "a",
+    heat: tab === "heat",
+    ghostB: room.b === null,
+    focus:
+      tab === "heat" && selected !== null
+        ? (room.topPlaces[selected] ?? null)
+        : null,
+    moment: replay.moment,
+  };
+  const insetTop = 80 + viewport.top;
+  const inset: MapInset = desktop
+    ? { top: 24, right: 24, bottom: 24, left: 24 + 400 + 24 }
+    : {
+        top: insetTop,
+        right: 16,
+        // Short phones: the card is capped under the top bar, so it covers at most everything below it.
+        bottom: cardOn
+          ? Math.max(
+              0,
+              Math.min(CARD_H + viewport.bottom, viewport.h - insetTop),
+            )
+          : heights[sheet],
+        left: 16,
+      };
+
   return (
-    <RoomShell
-      room={room}
-      isSample={roomId === "sample"}
-      snapPoint={snapPoint}
-      onSnapPointChange={setSnapPoint}
-      map={
-        <MapCanvas
-          points={room.points}
-          highlight={showHeat ? null : activeEvent}
-          heat={showHeat ? heatCells : null}
-        />
-      }
-      panel={panel}
-    />
+    <div ref={root} className="relative h-dvh overflow-hidden bg-land">
+      <div className="absolute inset-0">
+        <MapCanvas room={room} scene={scene} inset={inset} />
+      </div>
+      <TopBar
+        room={room}
+        onSettings={() =>
+          flow === "settings" ? closeFlow() : openFlow("settings")
+        }
+      />
+      <Legend
+        a={room.a.nickname}
+        b={room.b?.nickname ?? "상대"}
+        className="absolute top-[calc(80px+env(safe-area-inset-top))] left-4 z-10 md:top-auto md:right-[max(24px,env(safe-area-inset-right))] md:bottom-[max(24px,env(safe-area-inset-bottom))] md:left-auto"
+      />
+      {tab === "replay" && <MomentChip room={room} replay={replay} />}
+      {desktop ? (
+        <Panel
+          header={header}
+          bodyKey={bodyKey}
+          top={cardOn && <MomentCard room={room} replay={replay} />}
+        >
+          {body}
+        </Panel>
+      ) : (
+        <>
+          <Sheet
+            heights={heights}
+            ready={viewport.ready}
+            state={sheet}
+            onState={setSheet}
+            hidden={cardOn}
+            header={header}
+            bodyKey={bodyKey}
+          >
+            {body}
+          </Sheet>
+          <AnimatePresence>
+            {cardOn && (
+              <motion.div
+                key="card"
+                data-card
+                initial={{ opacity: 0, y: 96 }}
+                animate={{ opacity: 1, y: 0, transition: sheetSpring }}
+                exit={{ opacity: 0, y: 96, transition: { duration: 0.2 } }}
+                className="absolute inset-x-4 bottom-[calc(24px+env(safe-area-inset-bottom))] z-30 max-h-[calc(100dvh-104px-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-y-auto overscroll-contain rounded-[28px] shadow-soft"
+              >
+                <MomentCard room={room} replay={replay} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
+    </div>
   );
 }
